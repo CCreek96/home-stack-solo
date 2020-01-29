@@ -127,8 +127,8 @@ radarr/nzbdrone.db*
 radarr/nzbdrone.pid
 radarr/xdg/
 
-redis/config/redis.conf
-!redis/config/redis.example.conf
+redis/config/passwd.conf
+!redis/config/redis.conf
 redis/data/
 redis/logs/
 

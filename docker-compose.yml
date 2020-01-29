@@ -494,7 +494,6 @@ services:
                         - traefik_proxy
                 volumes:
                         - ./jackett/logs:/config/Jackett/logs
-                        #- ./jackett/logs/log.txt:/config/log.txt
                         - ./jackett/data/DataProtection:/config/Jackett/DataProtection
                         - ./jackett/data/Indexers:/config/Jackett/Indexers
                         - ./jackett/config/ServerConfig.json:/config/Jackett/ServerConfig.json
@@ -669,6 +668,7 @@ services:
                         - ./nextcloud:/var/www/html
                         - ./nextcloud/config:/var/www/html/config
                         - ./nextcloud/config/custom.config.php:/var/www/html/config/custom.config.php:ro
+                        - ./nextcloud/config/autoconfig.php:/var/www/html/config/autoconfig.php:ro
                         - ./nextcloud/custom_apps:/var/www/html/custom_apps
                         #- ./nextcloud/logs:/var/log/nextcloud
                         #- ./nextcloud/logs:/var/log/apache2
@@ -904,6 +904,7 @@ services:
                         - ./redis/logs:/var/log/redis
                         - /etc/localtime:/etc/localtime:ro
                         - ./redis/config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+                        - ./redis/config/passwd.conf:/usr/local/etc/redis/passwd.conf:ro
 
         # TODO: look into prometheus' node_manager
         # https://github.com/prometheus/node_exporter
@@ -925,7 +926,7 @@ services:
                 #        - "8125"
                 #        - "8094"
                 volumes:
-                        - ./telegraf/logs/telegraf.log:/var/log/telegraf/telegraf.log
+                        - ./telegraf/logs:/var/log/telegraf
                         - ./telegraf/config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
                         - /proc:/host/proc:ro
                         - /usr/bin/vcgencmd:/usr/bin/vcgencmd
@@ -1008,25 +1009,6 @@ services:
         
         # TODO: add Prometheus' AlertManager
         # https://prometheus.io/docs/alerting/overview/
-
-        watchtower:
-                container_name: watchtower
-                hostname: watchtower
-                image: containrrr/watchtower:latest
-                restart: unless-stopped
-                command: --schedule "0 0 3 * * MON" --cleanup
-                healthcheck:
-                        test: date || exit 1
-                        start_period: 1m
-                        interval: 2m
-                        timeout: 10s
-                        retries: 3
-                security_opt:
-                        - no-new-privileges:true
-                volumes:
-                        - /var/run/docker.sock:/var/run/docker.sock
-                        - ~/.docker/config.json:/config.json:ro
-                        - /etc/localtime:/etc/localtime:ro
 
         ha-dockermon:
                 container_name: ha-dockermon
