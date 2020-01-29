@@ -40,14 +40,12 @@ env_file="false"
 while [[ "$env_file" == "false" ]]; do
 	echo "$PWD"
 	env_file=$(check_env_exists)
-	if [[ "$env_file" == ".env" ]]; theni
+	if [[ "$env_file" == ".env" ]]; then
 		echo "env file found"
-		env_file_exists=true
 		set_redis_password
 	elif [[ "$env_file" == "example.env" ]]; then
 		echo "example.env found"
 		#mv example.env .env
-		env_file_exists=true
 		set_redis_password
 	elif [ "$PWD" == "/" ]; then
 		echo "ERROR: neither the .env or example.env file could be found"
