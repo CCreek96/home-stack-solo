@@ -1,0 +1,29 @@
+/logs/traefik.log {
+  daily
+  rotate 7
+  missingok
+  notifempty
+  compress
+  dateext
+  dateyesterday
+  dateformat .%Y-%m-%d
+  postrotate
+   docker kill --signal="USR1" $(docker ps | grep traefik | awk '{print $1}')
+  endscript
+}
+
+
+/logs/access.log {
+  daily
+  rotate 7
+  missingok
+  notifempty
+  compress
+  dateext
+  dateyesterday
+  dateformat .%Y-%m-%d
+  postrotate
+   docker kill --signal="USR1" $(docker ps | grep traefik | awk '{print $1}')
+  endscript
+}
+

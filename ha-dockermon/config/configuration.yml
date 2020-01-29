@@ -1,0 +1,6 @@
+debug: true
+http:
+  port: 8126
+docker_connection:
+  type: socket
+  path: /var/run/docker.sock

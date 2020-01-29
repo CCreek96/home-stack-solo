@@ -1,0 +1,234 @@
+weather:
+  name: Weather
+  control: hidden
+  entities:
+    - weather.home
+    - sun.sun
+
+transmission:
+  name: Transmission
+  control: hidden
+  entities:
+    - switch.transmission_switch
+    - switch.transmission_turtle_mode
+    - sensor.transmission_status
+    - sensor.transmission_total_torrents
+    - sensor.transmission_started_torrents
+    - sensor.transmission_active_torrents
+    - sensor.transmission_paused_torrents
+    - sensor.transmission_completed_torrents
+    - sensor.transmission_down_speed
+    - sensor.transmission_up_speed
+
+docker_switches:
+  name: Docker Switches
+  control: hidden
+  entities:
+    - switch.docker_heimdall
+    - switch.docker_jackett
+    - switch.docker_lidarr
+    - switch.docker_mariadb
+    - switch.docker_nextcloud
+    - switch.docker_ombi
+    - switch.docker_organizr
+    - switch.docker_phpmyadmin
+    - switch.docker_pihole
+    - switch.docker_plex
+    - switch.docker_portainer
+    - switch.docker_radarr
+    - switch.docker_sonarr
+    - switch.docker_tautulli
+    - switch.docker_traefik
+    - switch.docker_transmission_vpn
+    - switch.docker_homeassistant
+
+docker_sensors_cpu:
+  name: Docker CPU Use
+  control: hidden
+  entities:
+    - sensor.docker_jackett_cpu_use
+    - sensor.docker_lidarr_cpu_use
+    - sensor.docker_mariadb_cpu_use
+    - sensor.docker_nextcloud_cpu_use
+    - sensor.docker_ombi_cpu_use
+    - sensor.docker_organizr_cpu_use
+    - sensor.docker_phpmyadmin_cpu_use
+    - sensor.docker_pihole_cpu_use
+    - sensor.docker_plex_cpu_use
+    - sensor.docker_portainer_cpu_use
+    - sensor.docker_radarr_cpu_use
+    - sensor.docker_sonarr_cpu_use
+    - sensor.docker_tautulli_cpu_use
+    - sensor.docker_traefik_cpu_use
+    - sensor.docker_transmission_vpn_cpu_use
+    - sensor.docker_homeassistant_cpu_use
+
+docker_sensors_mem:
+  name: Docker Memory Use 
+  control: hidden
+  entities:
+    - sensor.docker_jackett_memory_use
+    - sensor.docker_lidarr_memory_use
+    - sensor.docker_mariadb_memory_use
+    - sensor.docker_nextcloud_memory_use
+    - sensor.docker_ombi_memory_use
+    - sensor.docker_organizr_memory_use
+    - sensor.docker_phpmyadmin_memory_use
+    - sensor.docker_pihole_memory_use
+    - sensor.docker_plex_memory_use
+    - sensor.docker_portainer_memory_use
+    - sensor.docker_radarr_memory_use
+    - sensor.docker_sonarr_memory_use
+    - sensor.docker_tautulli_memory_use
+    - sensor.docker_traefik_memory_use
+    - sensor.docker_transmission_vpn_memory_use
+    - sensor.docker_homeassistant_memory_use
+
+docker_sensors_mem_percent:
+  name: Docker Memory Use
+  control: hidden
+  entities:
+    - sensor.docker_jackett_memory_use_percent
+    - sensor.docker_lidarr_memory_use_percent
+    - sensor.docker_mariadb_memory_use_percent
+    - sensor.docker_nextcloud_memory_use_percent
+    - sensor.docker_ombi_memory_use_percent
+    - sensor.docker_organizr_memory_use_percent
+    - sensor.docker_phpmyadmin_memory_use_percent
+    - sensor.docker_pihole_memory_use_percent
+    - sensor.docker_plex_memory_use_percent
+    - sensor.docker_portainer_memory_use_percent
+    - sensor.docker_radarr_memory_use_percent
+    - sensor.docker_sonarr_memory_use_percent
+    - sensor.docker_tautulli_memory_use_percent
+    - sensor.docker_traefik_memory_use_percent
+    - sensor.docker_transmission_vpn_memory_use_percent
+    - sensor.docker_homeassistant_memory_use_percent
+
+docker_sensors_speed_down:
+  name: Docker Network Speed Down (kB/s)
+  control: hidden
+  entities:
+    - sensor.docker_jackett_network_speed_down
+    - sensor.docker_lidarr_network_speed_down
+    - sensor.docker_mariadb_network_speed_down
+    - sensor.docker_nextcloud_network_speed_down
+    - sensor.docker_ombi_network_speed_down
+    - sensor.docker_organizr_network_speed_down
+    - sensor.docker_phpmyadmin_network_speed_down
+    - sensor.docker_pihole_network_speed_down
+    - sensor.docker_plex_network_speed_down
+    - sensor.docker_portainer_network_speed_down
+    - sensor.docker_radarr_network_speed_down
+    - sensor.docker_sonarr_network_speed_down
+    - sensor.docker_tautulli_network_speed_down
+    - sensor.docker_traefik_network_speed_down
+    - sensor.docker_transmission_vpn_network_speed_down
+    - sensor.docker_homeassistant_network_speed_down
+
+docker_sensors_speed_up:
+  name: Docker Network Speed Up
+  control: hidden
+  entities:
+    - sensor.docker_jackett_network_speed_up
+    - sensor.docker_lidarr_network_speed_up
+    - sensor.docker_mariadb_network_speed_up
+    - sensor.docker_nextcloud_network_speed_up
+    - sensor.docker_ombi_network_speed_up
+    - sensor.docker_organizr_network_speed_up
+    - sensor.docker_phpmyadmin_network_speed_up
+    - sensor.docker_pihole_network_speed_up
+    - sensor.docker_plex_network_speed_up
+    - sensor.docker_portainer_network_speed_up
+    - sensor.docker_radarr_network_speed_up
+    - sensor.docker_sonarr_network_speed_up
+    - sensor.docker_tautulli_network_speed_up
+    - sensor.docker_traefik_network_speed_up
+    - sensor.docker_transmission_vpn_network_speed_up
+    - sensor.docker_homeassistant_network_speed_up
+
+docker_sensors_total_down:
+  name: Docker Network Total Down
+  control: hidden
+  entities:
+    - sensor.docker_jackett_network_total_down
+    - sensor.docker_lidarr_network_total_down
+    - sensor.docker_mariadb_network_total_down
+    - sensor.docker_nextcloud_network_total_down
+    - sensor.docker_ombi_network_total_down
+    - sensor.docker_organizr_network_total_down
+    - sensor.docker_phpmyadmin_network_total_down
+    - sensor.docker_pihole_network_total_down
+    - sensor.docker_plex_network_total_down
+    - sensor.docker_portainer_network_total_down
+    - sensor.docker_radarr_network_total_down
+    - sensor.docker_sonarr_network_total_down
+    - sensor.docker_tautulli_network_total_down
+    - sensor.docker_traefik_network_total_down
+    - sensor.docker_transmission_vpn_network_total_down
+    - sensor.docker_homeassistant_network_total_down
+
+docker_sensors_total_up:
+  name: Docker Network Total Up (MB)
+  control: hidden
+  entities:
+    - sensor.docker_jackett_network_total_up
+    - sensor.docker_lidarr_network_total_up
+    - sensor.docker_mariadb_network_total_up
+    - sensor.docker_nextcloud_network_total_up
+    - sensor.docker_ombi_network_total_up
+    - sensor.docker_organizr_network_total_up
+    - sensor.docker_phpmyadmin_network_total_up
+    - sensor.docker_pihole_network_total_up
+    - sensor.docker_plex_network_total_up
+    - sensor.docker_portainer_network_total_up
+    - sensor.docker_radarr_network_total_up
+    - sensor.docker_sonarr_network_total_up
+    - sensor.docker_tautulli_network_total_up
+    - sensor.docker_traefik_network_total_up
+    - sensor.docker_transmission_vpn_network_total_up
+    - sensor.docker_homeassistant_network_total_up
+
+docker_sensors_status:
+  name: Docker Status
+  control: hidden
+  entities:
+    - sensor.docker_jackett_status
+    - sensor.docker_lidarr_status
+    - sensor.docker_mariadb_status
+    - sensor.docker_nextcloud_status
+    - sensor.docker_ombi_status
+    - sensor.docker_organizr_status
+    - sensor.docker_phpmyadmin_status
+    - sensor.docker_pihole_status
+    - sensor.docker_plex_status
+    - sensor.docker_portainer_status
+    - sensor.docker_radarr_status
+    - sensor.docker_sonarr_status
+    - sensor.docker_tautulli_status
+    - sensor.docker_traefik_status
+    - sensor.docker_transmission_vpn_status
+    - sensor.docker_homeassistant_status
+
+docker_sensors_up_time:
+  name: Docker Up Time
+  control: hidden
+  entities:
+    - sensor.docker_jackett_up_time
+    - sensor.docker_lidarr_up_time
+    - sensor.docker_mariadb_up_time
+    - sensor.docker_nextcloud_up_time
+    - sensor.docker_ombi_up_time
+    - sensor.docker_organizr_up_time
+    - sensor.docker_phpmyadmin_up_time
+    - sensor.docker_pihole_up_time
+    - sensor.docker_plex_up_time
+    - sensor.docker_portainer_up_time
+    - sensor.docker_radarr_up_time
+    - sensor.docker_sonarr_up_time
+    - sensor.docker_tautulli_up_time
+    - sensor.docker_traefik_up_time
+    - sensor.docker_transmission_vpn_up_time
+    - sensor.docker_homeassistant_up_time
+
+

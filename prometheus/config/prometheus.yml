@@ -1,0 +1,60 @@
+global:
+  scrape_interval:     10s 
+  evaluation_interval: 10s 
+  scrape_timeout: 10s 
+
+# The labels to add to any time series or alerts when communicating with
+# external systems (federation, remote storage, Alertmanager).
+  external_labels:
+    environment: Development
+    service: prometheus
+    region: US
+    dc: us-south-1
+
+# Rule files specifies a list of globs. Rules and alerts are read from
+# all matching files.
+#rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+  
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: 'prometheus'
+    scrape_interval: 5s
+    scrape_timeout: 2s
+    honor_labels: true
+    static_configs:
+      - targets: ['prometheus:9090']
+
+  - job_name: 'traefik'
+    scrape_interval: 5s
+    scrape_timeout: 2s
+    honor_labels: true
+    static_configs:
+      - targets: ['traefik:8082']
+
+  - job_name: 'telegraf'
+    scrape_interval: 5s
+    scrape_timeout: 2s
+    honor_labels: true
+    static_configs:
+      - targets: ['telegraf:9273']
+
+# Alerting specifies settings related to the Alertmanager.
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets:
+      - alertmanager:9093
+
+# Settings related to the remote write feature.
+#remote_write:
+#  [ - <remote_write> ... ]
+
+# Settings related to the remote read feature.
+#remote_read:
+#  [ - <remote_read> ... ]
+

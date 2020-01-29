@@ -1,0 +1,89 @@
+global:
+        checkNewVersion: true
+        sendAnonymousUsage: false
+
+api:
+        dashboard: true
+        debug: true
+
+entryPoints:
+        http:
+                address: ':80'
+        https:
+                address: ':443'
+        traefik:
+                address: ':8080'
+        metrics:
+                address: ':8082'
+        plex:
+                address: ':32400'
+
+# Let's encrypt configuration
+certificatesResolvers:
+        dns-cloudflare:
+                acme:
+                        #caserver: 'https://acme-staging-v02.api.letsencrypt.org/directory'
+                        email: $CERT_RESOLVER_EMAIL
+                        storage: '/acme/acme.json'
+                        dnsChallenge:
+                                provider: cloudflare
+                                #delayBeforeCheck: 300
+                                resolvers:
+                                        - '1.1.1.1:53'
+                                        - '1.0.0.1:53'
+
+
+providers:
+        docker:
+                endpoint: 'unix:///var/run/docker.sock'
+                defaultRule: "Host(`{{ index .Labels \"com.docker.compose.service\"}}`)"
+                network: traefik_proxy
+                exposedByDefault: false
+                swarmMode: false
+        file:
+                filename: '/rules.yml'
+
+log:
+        level: INFO     # Options: DEBUG, INFO, WARN, ERROR, FATAL, PANIC
+        filePath: '/logs/traefik.log'
+        format: json
+
+accessLog:
+        filePath: '/logs/access.log'
+        format: json
+        bufferingSize: 100
+        filters:
+                statusCodes:
+                        - '100-199'
+                        - '200-299'
+                        - '300-399'
+                        - '400-499'
+                        - '500-599'
+                        - '600-699'
+                retryAttempts: true
+                minDuration: '10ms'
+        # Limiting the Logs to Specific Fields
+        fields:
+                defaultMode: keep
+                names:
+                        ClientUsername: keep
+                headers:
+                        defaultMode: keep
+                        names:
+                                #User-Agent: redact
+                                #Authorization: drop
+                                User-Agent: keep
+                                Authorization: keep
+                                Content-Type: keep
+        
+metrics:
+        prometheus:
+                addEntryPointsLabels: true
+                addServicesLabels: true
+                entryPoint: metrics
+                buckets: 
+                        - 0.1
+                        - 0.3
+                        - 1.2
+                        - 5.0
+                

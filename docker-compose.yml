@@ -1,0 +1,1067 @@
+version: '3.7'
+
+networks:
+
+        traefik_proxy:
+                external: true
+        default:
+                driver: bridge
+
+services:
+
+        traefik:
+                container_name: traefik
+                image: traefik:latest
+                hostname: traefik
+                restart: unless-stopped
+                healthcheck:
+                        test: ping -c 2 traefik || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - default
+                ports:
+                        - "80:80"
+                        - "443:443"
+                        - "8080:8080"
+                        - "8082:8082"
+                volumes:
+                        - ./traefik/config/traefik.yml:/traefik.yml:ro
+                        - ./traefik/config/rules.yml:/rules.yml:ro
+                        - ./traefik/acme/acme.json:/acme/acme.json
+                        - ./traefik/logs:/logs
+                        - ./shared:/shared
+                        - /etc/localtime:/etc/localtime:ro
+                        - /var/run/docker.sock:/var/run/docker.sock:ro
+                environment:
+                        - TZ=$TZ
+                        - CF_API_EMAIL=$CLOUDFLARE_EMAIL
+                        - CF_API_KEY=$CLOUDFLARE_API_KEY
+                #logging:
+                #        options:
+                #                max-size: "12m"
+                #                max-file: "5"
+                #        driver: json-file
+                depends_on:
+                        - influxdb
+                        - prometheus
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.http-catchall.entrypoints=http"
+                        - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
+                        - "traefik.http.routers.http-catchall.middlewares=https-redirect"
+                        - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+                        - "traefik.http.routers.traefik-secure.entrypoints=https"
+                        - "traefik.http.routers.traefik-secure.rule=Host(`traefik.$DOMAIN_NAME`)" #&& (PathPrefix(`/api`) || PathPrefix(`/dashboard`) || PathPrefix(`/metrics`))"
+                        - "traefik.http.routers.traefik-secure.tls=true"
+                        - "traefik.http.routers.traefik-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.traefik-secure.tls.domains[0].main=$DOMAIN_NAME"
+                        - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.$DOMAIN_NAME"
+                        - "traefik.http.routers.traefik-secure.middlewares=traefik-chain@file"
+                        - "traefik.http.routers.traefik-secure.service=api@internal"
+
+        pihole:
+                container_name: pihole
+                hostname: pihole
+                image: pihole/pihole:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                cap_add:
+                        - NET_ADMIN
+                dns:
+                        - 127.0.0.1
+                        - 1.1.1.1
+                networks:
+                        - traefik_proxy
+                ports:
+                          - "53:53/tcp"
+                          - "53:53/udp"
+                          - "67:67/udp"
+                          - "8182:80/tcp"
+                          - "8183:443/tcp"
+                volumes:
+                        - ./pihole/pihole:/etc/pihole
+                        - ./pihole/dnsmasq.d:/etc/dnsmasq.d
+                        - ./pihole/resolv.conf:/etc/resolv.conf
+                        - ./pihole/logs/pihole.log:/var/log/pihole.log
+                        - ./pihole/logs/pihole-FTL.log:/var/log/pihole-FTL.log
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - ServerIP=$SERVER_IP
+                        - DNS1=$ROUTER_IP
+                        - DNS2=no
+                        - WEBPASSWORD=$ADMIN_PASSWORD
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.pihole-secure.entrypoints=https"
+                        - "traefik.http.routers.pihole-secure.rule=Host(`pihole.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.pihole-secure.tls=true"
+                        - "traefik.http.routers.pihole-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.pihole-secure.middlewares=pihole-chain@file"
+                        - "traefik.http.routers.pihole-secure.service=pihole"
+                        - "traefik.http.services.pihole.loadbalancer.server.port=80"
+
+        heimdall:
+                container_name: heimdall
+                hostname: heimdall
+                image: linuxserver/heimdall:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - traefik_proxy
+                volumes:
+                        - ./heimdall/keys:/config/keys
+                        - ./heimdall/logs:/config/log
+                        - ./heimdall/nginx:/config/nginx
+                        - ./heimdall/php:/config/php
+                        - ./heimdall/www:/config/www
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.heimdall-secure.entrypoints=https"
+                        - "traefik.http.routers.heimdall-secure.rule=Host(`heimdall.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.heimdall-secure.tls=true"
+                        - "traefik.http.routers.heimdall-secure.middlewares=secure-chain@file"
+                        - "traefik.http.routers.heimdall-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.heimdall-secure.service=heimdall"
+                        - "traefik.http.services.heimdall.loadbalancer.server.port=80"
+
+        organizr:
+                container_name: organizr
+                hostname: organizr
+                image: linuxserver/organizr:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                volumes:
+                        - ./organizr:/config
+                        - ./shared:/shared
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.organizr-secure.entrypoints=https"
+                        - "traefik.http.routers.organizr-secure.rule=Host(`organizr.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.organizr-secure.tls=true"
+                        - "traefik.http.routers.organizr-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.organizr-secure.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.organizr-secure.service=organizr"
+                        - "traefik.http.services.organizr.loadbalancer.server.port=80"
+        
+
+        homeassistant:
+                container_name: homeassistant
+                hostname: homeassistant
+                image: homeassistant/home-assistant:latest
+                restart: unless-stopped
+                privileged: true
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - traefik_proxy
+                volumes:
+                        - ./homeassistant/.cloud:/config/.cloud
+                        - ./homeassistant/deps:/config/deps
+                        - ./homeassistant/.HA_VERSION:/config/.HA_VERSION
+                        - ./homeassistant/.storage:/config/.storage
+                        - ./homeassistant/tts:/config/tts
+                        - ./homeassistant/config/automations.yaml:/config/automations.yaml
+                        - ./homeassistant/config/configuration.yaml:/config/configuration.yaml
+                        - ./homeassistant/config/groups.yaml:/config/groups.yaml
+                        - ./homeassistant/config/scenes.yaml:/config/scenes.yaml
+                        - ./homeassistant/config/scripts.yaml:/config/scripts.yaml
+                        - ./homeassistant/config/secrets.yaml:/config/secrets.yaml
+                        - ./homeassistant/config/custom_components:/config/custom_components
+                        - ./homeassistant/logs/home-assistant.log:/config/home-assistant.log
+                        - ./homeassistant/data/home-assistant_v2.db:/config/home-assistant_v2.db
+                        - ./homeassistant/data/home-assistant_v2.db-shm:/config/home-assistant_v2.db-shm
+                        - ./homeassistant/data/home-assistant_v2.db-wal:/config/home-assistant_v2.db-wal
+                        - ./shared:/shared
+                        - /etc/localtime:/etc/localtime:ro
+                        - /var/run/docker.sock:/var/run/docker.sock:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.homeassistant-secure.entrypoints=https"
+                        - "traefik.http.routers.homeassistant-secure.rule=Host(`homeassistant.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.homeassistant-secure.tls=true"
+                        - "traefik.http.routers.homeassistant-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.homeassistant-secure.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.homeassistant-secure.service=homeassistant"
+                        - "traefik.http.services.homeassistant.loadbalancer.server.port=8123"
+
+        mosquitto:
+                container_name: mosquitto
+                hostname: mosquitto
+                image: eclipse-mosquitto:latest
+                user: $PUID:$PGID
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - default
+                ports:
+                        - "1883:1883"
+                        - "9001:9001"
+                volumes: 
+                        - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+                        - ./mosquitto/config/passwd:/mosquitto/config/passwd
+                        - ./mosquitto/data:/mosquitto/data
+                        - ./mosquitto/logs:/mosquitto/logs
+                        - ./shared:/shared
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+
+        transmission:
+                container_name: transmission
+                hostname: transmission
+                image: haugene/transmission-openvpn:latest-armhf
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                cap_add:
+                        - NET_ADMIN
+                devices:
+                        - /dev/net/tun
+                dns:
+                        - 1.1.1.1
+                        - 1.0.0.1
+                networks:
+                        - traefik_proxy
+                        - default
+                ports:
+                        - "9091:9091"
+                volumes:
+                        - ./transmission/config/settings.json:/data/transmission-home/settings.json:ro
+                        - ./transmission/config/blocklists:/data/transmission-home/blocklists
+                        - ./transmission/data/stats.json:/data/transmission-home/stats.json
+                        - ./transmission/data/dht.dat:/data/transmission-home/dht.dat
+                        - ./transmission/logs/transmission.log:/data/transmission-home/transmission.log
+                        - ./shared:/shared
+                        - $MEDIA_PATH/downloads/complete:/downloads/complete
+                        - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
+                        - $MEDIA_PATH/downloads/resume:/downloads/resume
+                        - $MEDIA_PATH/downloads/torrents:/downloads/torrents
+                        - $MEDIA_PATH/watch:/watch
+                        - /etc/localtime:/etc/localtime:ro
+                env_file:
+                        - ./shared/env-files/transmission.env
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - OPENVPN_PROVIDER=$VPN_PROVIDER
+                        - OPENVPN_USERNAME=$VPN_USERNAME
+                        - OPENVPN_PASSWORD=$VPN_PASSWORD
+                        - LOCAL_NETWORK=$LOCAL_NETWORK
+                        - TRANSMISSION_RPC_USERNAME=$TRANSMISSION_USERNAME
+                        - TRANSMISSION_RPC_PASSWORD=$ADMIN_PASSWORD
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.transmission-secure.entrypoints=https"
+                        - "traefik.http.routers.transmission-secure.rule=Host(`transmission.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.transmission-secure.tls=true"
+                        - "traefik.http.routers.transmission-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.transmission-secure.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.transmission-secure.service=transmission"
+                        - "traefik.http.services.transmission.loadbalancer.server.port=9091"
+
+        radarr:
+                container_name: radarr
+                hostname: radarr
+                image: linuxserver/radarr:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - default
+                ports:
+                        - "7878:7878"
+                volumes:
+                        - ./radarr:/config
+                        - ./radarr/logs:/config/logs
+                        - ./shared:/shared
+                        - ${MEDIA_PATH}/downloads:/downloads
+                        - ${MEDIA_PATH}/downloads/complete:/downloads/complete
+                        - ${MEDIA_PATH}/downloads/incomplete:/downloads/incomplete
+                        - ${MEDIA_PATH}/movies:/movies
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - UMASK_SET=022
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.radarr-secure.entrypoints=https"
+                        - "traefik.http.routers.radarr-secure.rule=Host(`radarr.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.radarr-secure.tls=true"
+                        - "traefik.http.routers.radarr-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.radarr-secure.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.radarr-secure.service=radarr"
+                        - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+
+        sonarr:
+                container_name: sonarr
+                hostname: sonarr
+                image: linuxserver/sonarr:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - default
+                ports:
+                        - "8989:8989"
+                volumes:
+                        - ./sonarr/config/config.xml:/config/config.xml
+                        - ./sonarr/config/xdg:/config/xdg
+                        - ./sonarr/config/nzbdrone.pid:/config/nzbdrone.pid
+                        - ./sonarr/data/Backups:/config/Backups
+                        - ./sonarr/data/MediaCover:/config/MediaCover
+                        - ./sonarr/data/NzbDrone:/opt/NzbDrone
+                        - ./sonarr/data/nzbdrone.db:/config/nzbdrone.db
+                        - ./sonarr/data/nzbdrone.db-shm:/config/nzbdrone.db-shm
+                        - ./sonarr/data/nzbdrone.db-wal:/config/nzbdrone.db-wal
+                        - ./sonarr/logs:/config/logs
+                        - ./sonarr/logs/logs.db:/config/logs.db
+                        - ./sonarr/logs/logs.db-shm:/config/logs.db-shm
+                        - ./sonarr/logs/logs.db-wal:/config/logs.db-wal
+                        - ./shared:/shared
+                        - $MEDIA_PATH/downloads:/downloads
+                        - $MEDIA_PATH/downloads/complete:/downloads/complete
+                        - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
+                        - $MEDIA_PATH/tvshows:/tv
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - UMASK_SET=022
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.sonarr-secure.entrypoints=https"
+                        - "traefik.http.routers.sonarr-secure.rule=Host(`sonarr.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.sonarr-secure.tls=true"
+                        - "traefik.http.routers.sonarr-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.sonarr-secure.middlewares=secure-chain@file"
+                        - "traefik.http.routers.sonarr-secure.service=sonarr"
+                        - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+
+        lidarr:
+                container_name: lidarr
+                hostname: lidarr
+                image: linuxserver/lidarr:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - default
+                ports:
+                        - "8686:8686"
+                volumes:
+                        - ./lidarr/config/config.xml:/config/config.xml
+                        - ./lidarr/config/.config:/config/.config
+                        - ./lidarr/config/lidarr.pid:/config/lidarr.pid
+                        - ./lidarr/data/lidarr.db:/config/lidarr.db
+                        - ./lidarr/data/lidarr.db-shm:/config/lidarr.db-shm
+                        - ./lidarr/data/lidarr.db-wal:/config/lidarr.db-wal
+                        - ./lidarr/data/Backups:/config/Backups
+                        - ./lidarr/data/MediaCover:/config/MediaCover
+                        - ./lidarr/logs:/config/logs
+                        - ./lidarr/logs/logs.db:/config/logs.db
+                        - ./lidarr/logs/logs.db-shm:/config/logs.db-shm
+                        - ./lidarr/logs/logs.db-wal:/config/logs.db-wal
+                        - ./shared:/shared
+                        - $MEDIA_PATH/downloads:/downloads
+                        - $MEDIA_PATH/downloads/complete:/downloads/complete
+                        - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
+                        - $MEDIA_PATH/music:/music
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - UMASK_SET=022
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.lidarr-secure.entrypoints=https"
+                        - "traefik.http.routers.lidarr-secure.rule=Host(`lidarr.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.lidarr-secure.tls=true"
+                        - "traefik.http.routers.lidarr-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.lidarr-secure.middlewares=secure-chain@file"
+                        - "traefik.http.routers.lidarr-secure.service=lidarr"
+                        - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
+
+        jackett:
+                container_name: jackett
+                hostname: jackett
+                image: linuxserver/jackett:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                #expose:
+                ports:
+                        - "9117"
+                #network_mode: container:transmission-vpn
+                networks:
+                        - traefik_proxy
+                volumes:
+                        - ./jackett/logs:/config/Jackett/logs
+                        #- ./jackett/logs/log.txt:/config/log.txt
+                        - ./jackett/data/DataProtection:/config/Jackett/DataProtection
+                        - ./jackett/data/Indexers:/config/Jackett/Indexers
+                        - ./jackett/config/ServerConfig.json:/config/Jackett/ServerConfig.json
+                        - ./shared:/shared
+                        - $MEDIA_PATH/downloads:/downloads
+                        - $MEDIA_PATH/downloads/complete:/downloads/complete
+                        - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.jackett-secure.entrypoints=https"
+                        - "traefik.http.routers.jackett-secure.rule=Host(`jackett.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.jackett-secure.tls=true"
+                        - "traefik.http.routers.jackett-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.jackett-secure.middlewares=secure-chain@file"
+                        - "traefik.http.routers.jackett-secure.service=jackett"
+                        - "traefik.http.services.jackett.loadbalancer.server.port=9117"
+
+        plex:
+                container_name: plex
+                hostname: $PLEX_HOSTNAME
+                image: linuxserver/plex:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - traefik_proxy
+                        - default
+                devices:
+                        - /dev/dri:/dev/dri
+                ports:
+                        - "32400:32400/tcp"
+                        - "32400:32400/udp"
+                        - "3005:3005/tcp"
+                        - "8324:8324/tcp"
+                        - "1900:1900/udp"
+                        - "5354:5353/udp"
+                        - "32410:32410/udp"
+                        - "32412:32412/udp"
+                        - "32413:32413/udp"
+                        - "32414:32414/udp"
+                        - "32469:32469/tcp"
+                        - "32469:32469/udp"
+                        - "33400:33400"
+                volumes:
+                        - ./plex:/config/Library/'Application Support'/'Plex Media Server'
+                        - ./shared:/shared
+                        - $MEDIA_PATH/tvshows:/tv:ro
+                        - $MEDIA_PATH/movies:/movies:ro
+                        - $MEDIA_PATH/music:/music:ro
+                        - $MEDIA_PATH/photos:/photos:ro
+                        - $MEDIA_PATH/tmp/transcode:/transcode
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - HOSTNAME=$PLEX_HOSTNAME
+                        #- PLEX_CLAIM=$PLEX_CLAIM
+                        - ADVERTISE_IP=$PLEX_IP
+                        - VERSION=docker
+                        - UMASK_SET=022
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.plex-secure.entrypoints=https"
+                        - "traefik.http.routers.plex-secure.rule=Host(`plex.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.plex-secure.tls=true"
+                        - "traefik.http.routers.plex-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.plex-secure.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.plex-secure.service=plex"
+                        - "traefik.http.services.plex.loadbalancer.server.port=32400"
+
+        tautulli:
+                container_name: tautulli
+                hostname: tautulli
+                image: linuxserver/tautulli:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - default
+                ports: 
+                        - "8181"
+                volumes:
+                        - ./tautulli:/config
+                        - ./tautulli/logs:/logs
+                        - ./plex/Logs:/plex-logs:ro
+                        - ./shared:/shared
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.tautulli-secure.entrypoints=https"
+                        - "traefik.http.routers.tautulli-secure.rule=Host(`tautulli.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.tautulli-secure.tls=true"
+                        - "traefik.http.routers.tautulli-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.tautulli-secure.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.tautulli-secure.service=tautulli"
+                        - "traefik.http.services.tautulli.loadbalancer.server.port=8181"
+
+        varken:
+                container_name: varken
+                hostname: varken
+                image: boerderij/varken:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - default
+                volumes:
+                        - ./varken/data/GeoLite2-City.mmdb:/config/GeoLite2-City.mmdb
+                        - ./varken/logs:/config/logs
+                        - /etc/localtime:/etc/localtime:ro
+                env_file:
+                        - ./shared/env-files/varken.env
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - VRKN_GLOBAL_MAXMIND_LICENSE_KEY=$MAXMIND_KEY
+                        - VRKN_INFLUXDB_USERNAME=$VARKEN_DB_USER
+                        - VRKN_INFLUXDB_PASSWORD=$VARKEN_DB_PASSWORD
+                        - VRKN_TAUTULLI_1_APIKEY=$TAUTULLI_API_KEY
+                        - VRKN_SONARR_1_APIKEY=$SONARR_API_KEY
+                        - VRKN_RADARR_1_APIKEY=$RADARR_API_KEY
+                        - VRKN_LIDARR_1_APIKEY=$LIDARR_API_KEY
+                depends_on:
+                        - influxdb
+                
+        nextcloud:
+                container_name: nextcloud
+                hostname: nextcloud
+                image: cacreek/nextcloud-full:latest-armv7l
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - traefik_proxy
+                        - default
+                volumes:
+                        - ./nextcloud:/var/www/html
+                        - ./nextcloud/config:/var/www/html/config
+                        - ./nextcloud/config/custom.config.php:/var/www/html/config/custom.config.php:ro
+                        - ./nextcloud/custom_apps:/var/www/html/custom_apps
+                        #- ./nextcloud/logs:/var/log/nextcloud
+                        #- ./nextcloud/logs:/var/log/apache2
+                        - ./nextcloud/themes:/var/www/html/themes
+                        - $SHARED_PATH/nextcloud:/opt/data
+                        - ./postgres/sock:/var/run/postgresql
+                        - ./shared:/shared
+                        - /dev/urandom:/dev/urandom:ro
+                        - /etc/localtime:/etc/localtime:ro
+                env_file:
+                        - ./shared/env-files/nextcloud.env
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - DOMAIN_NAME=$DOMAIN_NAME
+                        - POSTGRES_HOST=$POSTGRES_HOST
+                        - POSTGRES_DB=$NEXTCLOUD_DB
+                        - POSTGRES_USER=$NEXTCLOUD_DB_USER
+                        - POSTGRES_PASSWORD=$NEXTCLOUD_DB_PASSWORD
+                        - REDIS_HOST=$REDIS_HOST
+                        - REDIS_HOST_PORT=$REDIS_PORT
+                        - REDIS_HOST_PASSWORD=$REDIS_PASSWORD
+                        - NEXTCLOUD_ADMIN_USER=$NEXTCLOUD_ADMIN_USER
+                        - NEXTCLOUD_ADMIN_PASSWORD=$ADMIN_PASSWORD
+                depends_on:
+                        - influxdb
+                        - postgres
+                        - redis
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.nextcloud-secure.entrypoints=https"
+                        - "traefik.http.routers.nextcloud-secure.rule=Host(`nextcloud.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.nextcloud-secure.tls=true"
+                        - "traefik.http.routers.nextcloud-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.nextcloud-secure.middlewares=nextcloud-chain@file"
+                        - "traefik.http.routers.nextcloud-secure.service=nextcloud"
+                        - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+#        fpm-nextcloud:
+#                container_name: fpm-nextcloud
+#                hostname: fpm-nextcloud
+#                #build: 
+#                #        context: ./shared/dockerfiles
+#                #        dockerfile: Dockerfile-nextcloud
+#                image: nextcloud:fpm
+#                restart: unless-stopped
+#                healthcheck:
+#                        test: date || exit 1
+#                        start_period: 1m
+#                        interval: 2m
+#                        timeout: 10s
+#                        retries: 3
+#                networks:
+#                       #- traefik_proxy
+#                        - default
+#                volumes:
+#                        - ./fpm-nextcloud:/var/www/html
+#                        - ./fpm-nextcloud/config:/var/www/html/config
+#                        #- ./nextcloud/config/custom.config.php:/var/www/html/config/custom.config.php:ro
+#                        - ./fpm-nextcloud/custom_apps:/var/www/html/custom_apps
+#                        #- ./fpm-nextcloud/logs:/var/log/nextcloud
+#                        #- ./fpm-nextcloud/logs:/var/log/apache2
+#                        - ./fpm-nextcloud/themes:/var/www/html/themes
+#                        #- ${SHARED_PATH}/nextcloud:/opt/data
+#                        - ./postgres/sock:/var/run/postgresql
+#                        - ./shared:/shared
+#                        - /dev/urandom:/dev/urandom:ro
+#                        - /etc/localtime:/etc/localtime:ro
+#                environment:
+#                        - TZ=${TZ}
+#                        - PUID=${PUID}
+#                        - PGID=${PGID}
+#                        - DOMAIN=fpm-nextcloud.rpiapps.xyz
+#                        - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER}
+#                        - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+#                        - POSTGRES_DB=fpmnextcloud
+#                        - POSTGRES_USER=fpmnextcloud
+#                        - POSTGRES_PASSWORD=fpmnextcloudDB
+#                        - POSTGRES_HOST=/var/run/postgresql
+#                        - REDIS_HOST=redis
+#                        - REDIS_HOST_PORT=6379
+#                        - REDIS_HOST_PASSWORD=J/X!:Ru_xcR}mJF\BW}Plp[(CboFY/9
+#                        #- REDIS_HOST_DBINDEX=0
+#                        #- SMTP_HOST=
+#                        #- SMTP_SECURE =
+#                        #- SMTP_PORT =
+#                        #- SMTP_AUTHTYPE =
+#                        #- SMTP_NAME =
+#                        #- SMTP_PASSWORD =
+#                        #- MAIL_FROM_ADDRESS =
+#                        #- MAIL_DOMAIN =
+#                depends_on:
+#                        - influxdb
+#                        - postgres
+#                        - redis
+#                        - nginx
+#
+#        nginx:
+#                container_name: nginx
+#                hostname: nginx
+#                image: nginx:latest
+#                restart: unless-stopped
+#                security_opt:
+#                        - no-new-privileges:true
+#                networks:
+#                        - traefik_proxy
+#                        - default
+#                volumes:
+#                        - ./fpm-nextcloud:/var/www/html:ro
+#                        - ./fpm-nextcloud/nginx.conf:/etc/nginx/nginx.conf:ro
+#                labels:
+#                        - "traefik.enable=true"
+#                        - "traefik.docker.network=traefik_proxy"
+#                        - "traefik.http.routers.fpm-nextcloud-secure.entrypoints=https"
+#                        - "traefik.http.routers.fpm-nextcloud-secure.rule=Host(`fpm-nextcloud.${DOMAIN_NAME}`)"
+#                        - "traefik.http.routers.fpm-nextcloud-secure.tls=true"
+#                        - "traefik.http.routers.fpm-nextcloud-secure.tls.certresolver=dns-cloudflare"
+#                        - "traefik.http.routers.fpm-nextcloud-secure.middlewares=nextcloud-chain@file"
+#                        - "traefik.http.routers.fpm-nextcloud-secure.service=fpm-nextcloud"
+#                        - "traefik.http.services.fpm-nextcloud.loadbalancer.server.port=80"
+
+        influxdb: # metrics and time-series db 
+                container_name: influxdb
+                hostname: influxdb
+                image: influxdb:latest
+                user: $PUID:$PGID
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - default
+                ports:
+                        - "8086:8086/tcp"
+                volumes:
+                        - ./influxdb/db:/var/lib/influxdb
+                        - ./influxdb/.influx_history:/.influx_history
+                        - ./influxdb/config:/etc/influxdb
+                        - ./influxdb/config/influxdb.conf:/etc/influxdb/influxdb.conf:ro
+                        - ./influxdb/logs/:/var/log/influxdb
+                        - /etc/localtime:/etc/localtime:ro
+                        
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - INFLUXDB_ADMIN_USER=$INFLUXDB_USER
+                        - INFLUXDB_ADMIN_PASSWORD=$ADMIN_PASSWORD
+
+        prometheus:
+                container_name: prometheus
+                hostname: prometheus
+                image: prom/prometheus
+                restart: unless-stopped
+                networks:
+                        - default
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                ports:
+                        - "9090:9090"
+                volumes:
+                        - ./prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                
+
+        # TODO: add administration webui; options:
+        # https://www.adminer.org/en/ && https://github.com/vrana/adminer/
+        # https://github.com/phppgadmin/phppgadmin
+        postgres: # SQL Database
+                container_name: postgres
+                hostname: postgres
+                image: postgres:latest
+                user: $PUID:$PGID
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                ports:
+                        - "5432:5432"
+                networks:
+                        - default
+                volumes:
+                        - ./postgres/data:/var/lib/postgresql/data
+                        - ./postgres/logs:/var/log/postgresql
+                        - ./postgres/sock:/var/run/postgresql
+                        - ./shared/scripts/psql-init.sh:/docker-entrypoint-initdb.d/psql-init.sh
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PGTZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - POSTGRES_USER=$POSTGRES_USER
+                        - POSTGRES_PASSWORD=$ADMIN_PASSWORD
+
+        redis: # caching db https://redis.io
+                container_name: redis
+                hostname: redis
+                image: redis:latest
+                restart: always
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                command: redis-server /usr/local/etc/redis/redis.conf
+                networks:
+                        - default
+                ports:
+                        - "6379:6379"
+                volumes:
+                        - ./redis/data:/data
+                        - ./redis/logs:/var/log/redis
+                        - /etc/localtime:/etc/localtime:ro
+                        - ./redis/config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+
+        # TODO: look into prometheus' node_manager
+        # https://github.com/prometheus/node_exporter
+        telegraf:
+                container_name: telegraf
+                hostname: telegraf
+                image: telegraf:latest
+                restart: always
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - default
+                #expose: 
+                #        - "8092"
+                #        - "8125"
+                #        - "8094"
+                volumes:
+                        - ./telegraf/logs/telegraf.log:/var/log/telegraf/telegraf.log
+                        - ./telegraf/config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+                        - /proc:/host/proc:ro
+                        - /usr/bin/vcgencmd:/usr/bin/vcgencmd
+                        - /var/run/docker.sock:/var/run/docker.sock:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - HOST_PROC=/host/proc
+                        - REDIS_PASSWORD=$REDIS_PASSWORD
+
+
+
+        grafana:
+                image: grafana/grafana:latest
+                hostname: grafana
+                container_name: grafana
+                user: $PUID:$PGID
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - traefik_proxy
+                        - default
+                volumes:
+                        - ./grafana/plugins:/var/lib/grafana/plugins
+                        - ./grafana/logs:/var/log/grafana
+                        - ./postgres/sock:/var/run/postgresql
+                        - /etc/localtime:/etc/localtime:ro
+                env_file:
+                        - ./shared/env-files/grafana.env
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - GF_SERVER_DOMAIN=grafana.$DOMAIN_NAME
+                        - GF_SERVER_ROOT_URL=https://grafana.$DOMAIN_NAME
+                        - GF_DATABASE_HOST=$POSTGRES_HOST
+                        - GF_DATABASE_NAME=$GRAFANA_DB
+                        - GF_DATABASE_USER=$GRAFANA_DB_USER
+                        - GF_DATABASE_PASSWORD=$GRAFANA_DB_PASSWORD
+                        - GF_REMOTE_CACHE_CONNSTR=addr=$REDIS_HOST:$REDIS_PORT,pool_size=100,db=1
+                        - GF_SECURITY_ADMIN_USER=$GRAFANA_ADMIN_USER
+                        - GF_SECURITY_ADMIN_PASSWORD=$ADMIN_PASSWORD
+                        #- GF_SMTP_USER=
+                        #- GF_SMTP_PASSWORD=
+                        #- GF_SMTP_FROM_ADDRESS=admin@grafana.localhost
+                        #- GF_SMTP_EHLO_IDENTITY=dashboard.example.com
+                depends_on:
+                        - influxdb
+                        - postgres
+                        - varken
+                        - grafana-image-renderer
+                labels:
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.grafana-secure.entrypoints=https"
+                        - "traefik.http.routers.grafana-secure.rule=Host(`grafana.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.grafana-secure.tls=true"
+                        - "traefik.http.routers.grafana-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.grafana-secure.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.grafana-secure.service=grafana"
+                        - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+        grafana-image-renderer:
+                container_name: grafana-image-renderer
+                hostname: gf-renderer
+                image: cacreek/grafana-image-renderer-armv7l:latest-armv7l
+                restart: unless-stopped
+                security_opt:
+                        - no-new-privileges:true
+                ports:
+                        - "8081:8081"
+                environment:
+                        - ENABLE_METRICS=true
+        
+        # TODO: add Prometheus' AlertManager
+        # https://prometheus.io/docs/alerting/overview/
+
+        watchtower:
+                container_name: watchtower
+                hostname: watchtower
+                image: containrrr/watchtower:latest
+                restart: unless-stopped
+                command: --schedule "0 0 3 * * MON" --cleanup
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                volumes:
+                        - /var/run/docker.sock:/var/run/docker.sock
+                        - ~/.docker/config.json:/config.json:ro
+                        - /etc/localtime:/etc/localtime:ro
+
+        ha-dockermon:
+                container_name: ha-dockermon
+                hostname: ha-dockermon
+                image: philhawthorne/ha-dockermon:arm
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                ports:
+                        - "127.0.0.1:8126:8126"
+                volumes:
+                        - ./ha-dockermon/config:/config
+                        - ./ha-dockermon/config/configuration.yml:/config/configuration.yml:ro
+                        - ./ha-dockermon/logs:/var/log/ha-dockermon
+                        - /var/run/docker.sock:/var/run/docker.sock:ro
+                        - /etc/localtime:/etc/localtime:ro
+        docker-prune:
+                container_name: docker-prune
+                hostname: docker-prune
+                image: cacreek/docker-prune:latest-armv7l
+                restart: unless-stopped
+                command: --filter "until=24h"
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 2m
+                        timeout: 10s
+                        retries: 3
+                volumes:
+                        - /var/run/docker.sock:/var/run/docker.sock:ro
+                environment:
+                        - OPTIONS=system
+                        - SLEEP=86400
+
