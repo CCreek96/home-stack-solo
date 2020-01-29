@@ -45,7 +45,7 @@ while [[ "$env_file" == "false" ]]; do
 		set_redis_password
 	elif [[ "$env_file" == "example.env" ]]; then
 		echo "example.env found"
-		#mv example.env .env
+		mv example.env .env
 		set_redis_password
 	elif [ "$PWD" == "/" ]; then
 		echo "ERROR: neither the .env or example.env file could be found"
