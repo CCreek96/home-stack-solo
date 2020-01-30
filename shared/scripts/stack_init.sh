@@ -11,7 +11,6 @@ function check_env_exists() {
 }
 
 function set_redis_password() {
-	echo "called set redis passwd func"
 	local passwd_set="false"
 	local key=""
 	local val=""
@@ -41,10 +40,8 @@ while [[ "$env_file" == "false" ]]; do
 	echo "$PWD"
 	env_file=$(check_env_exists)
 	if [[ "$env_file" == ".env" ]]; then
-		echo "env file found"
 		set_redis_password
 	elif [[ "$env_file" == "example.env" ]]; then
-		echo "example.env found"
 		mv example.env .env
 		set_redis_password
 	elif [ "$PWD" == "/" ]; then
@@ -61,16 +58,26 @@ done
 echo "INFO: Generating log files"
 [ ! -d "pihole/logs" ] && mkdir pihole/logs
 [ ! -f "pihole/logs/pihole.log" ] && touch pihole/logs/pihole.log
-[ ! -f "pihole/logs/pihole.log" ] && touch pihole/logs/pihole-FTL.log
+[ ! -f "pihole/logs/pihole-FTL.log" ] && touch pihole/logs/pihole-FTL.log
 [ ! -f "influxdb/.influx_history" ] && touch influxdb/.influx_history
 
 echo "INFO: Generating .htpasswd and passwd files"
-echo "you will need to insert a username and generate"
-echo "an encrypted password into these files in the form"
-echo "username:password"
+echo "you will need to insert a username and generate an encrypted password into these files in the form username:password"
 [ ! -f "mosquitto/config/passwd" ] && touch mosquitto/config/passwd || echo "mosquitto/config/passwd exists; leaving alone"
 [ ! -f "shared/.htpasswd" ] && touch shared/.htpasswd || echo "shared/.htpasswd exists; leaving alone"
 [ ! -f "shared/passwd" ] && touch shared/passwd || echo "shared/passwd exists; leaving alone"
+
+echo "INFO: Moving postgres config files"
+[ ! -d "postgres/data" ] && mkdir postgres/data/
+if [ -f "postgres/config/pg_hba.conf" ] && [ ! -f "postgres/data/pg_hba.conf" ]; then
+       	mv postgres/config/pg_hba.conf postgres/data
+fi
+if [ -f "postgres/config/pg_ident.conf" ] && [ ! -f "postgres/data/pg_ident.conf" ]; then
+       	mv postgres/config/pg_ident.conf postgres/data
+fi
+if [ -f "postgres/config/postgresql.conf" ] && [ ! -f "postgres/data/postgresql.conf" ]; then
+	mv postgres/config/postgresql.conf postgres/data
+fi
 
 echo "INFO: Setting user and group of directories"
 sudo chown ${USER:=$(/usr/bin/id -run)}:docker docker-compose.yml
@@ -82,7 +89,7 @@ sudo chown -R root:root homeassistant/
 sudo chown -R ${USER:=$(/usr/bin/id -run)}:docker influxdb/
 sudo chown -R ${USER:=$(/usr/bin/id -run)}:docker jackett/
 sudo chown -R ${USER:=$(/usr/bin/id -run)}:docker lidarr/
-sudo chown -R root:root mosqitto/
+sudo chown -R root:root mosquitto/
 sudo chown -R www-data:docker nextcloud/
 sudo chown -R ${USER:=$(/usr/bin/id -run)}:docker organizr/
 sudo chown -R root:root pihole/

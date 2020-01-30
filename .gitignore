@@ -42,7 +42,7 @@ lidarr/config/*
 lidarr/data/
 lidarr/logs/
 
-mosquitto/config/*
+mosquitto/config/passwd
 !mosquitto/config/mosquitto.conf
 mosquitto/data/
 mosquitto/logs/*
@@ -107,10 +107,6 @@ plex/Plug-ins/
 plex/Plug-in Support/
 plex/Preferences.xml
 
-postgres/data/*
-postgres/data/pg_hba.conf
-postgres/data/pg_ident.conf
-postgres/data/postgresql.conf
 postgres/data/
 postgres/logs/
 postgres/sock/
