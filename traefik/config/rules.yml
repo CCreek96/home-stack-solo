@@ -1,6 +1,35 @@
+#tcp:
+#        routers:
+#                plex:
+#                        entryPoints: ['plex']
+#                        #rule: "hostSNI(`*`)"
+#                        service:
+
 http:
-        #routers:
+        routers:
+                http-catchall:
+                       entryPoints: 
+                                - 'http'
+                       rule: 'HostRegexp(`{host:.+}`)'
+                       middlewares: 
+                               - https-redirect
+                       service: api@internal
+
                 #traefik:
+                #        entryPoints:
+                #                - 'https'
+                #        rule: 'Host(`traefik.$DOMAIN_NAME`) || (Host(`traefik.$DOMAIN_NAME`) && PathPrefix(`/api`)) || (Host(`traefik.$DOMAIN_NAME`) && PathPrefix(`/dashboard`))'
+                #        middlewares: 
+                #                - traefik-chain
+                #        service: api@internal
+                #        tls:
+                #                certResolver: dns-cloudflare
+                #                domains:
+                #                        - main: $DOMAIN_NAME
+                #                          sans: 
+                #                                - "*.$DOMAIN_NAME"
+
+
 
                 #metrics:
                 #        entryPoints: 'metrics'
@@ -13,9 +42,9 @@ http:
 
 
         middlewares:
-                #https-redirect:
-                #        redirectScheme:
-                #                scheme: 'https'
+                https-redirect:
+                        redirectScheme:
+                                scheme: 'https'
                 pihole-redirect:
                         addPrefix:
                                 prefix: '/admin'
@@ -45,7 +74,7 @@ http:
                                 #sslForceHost: true
                                 #sslHost: $DOMAIN_NAME
                                 referrerPolicy: 'same-origin'
-                                customFrameOptionsValue: allow-from https:$DOMAIN_NAME
+                                customFrameOptionsValue: 'SAMEORIGIN'
                                 browserXssFilter: true
                                 contentTypeNosniff: true
                                 forceSTSHeader: true
@@ -64,11 +93,11 @@ http:
                                 frameDeny: true
                                 sslRedirect: true
                                 sslForceHost: true
-                                sslHost: traefik.$DOMAIN_NAME
+                                #sslHost: traefik.$DOMAIN_NAME
                                 sslProxyHeaders: 
-                                        X-Forwarded-Proto: https
-                                referrerPolicy: same-origin
-                                customFrameOptionsValue: allow-from https:$DOMAIN_NAME
+                                        X-Forwarded-Proto: 'https'
+                                referrerPolicy: 'same-origin'
+                                customFrameOptionsValue: 'SAMEORIGIN'
                                 browserXssFilter: true
                                 contentTypeNosniff: true
                                 forceSTSHeader: true
@@ -77,10 +106,10 @@ http:
                                 stsSeconds: 63072000
                                 forceSTSHeader: true
                                 accessControlAllowMethods: ['GET, OPTIONS, PUT']
-                                accessControlAllowOrigin: https://$DOMAIN_NAME
+                                #accessControlAllowOrigin: https://$DOMAIN_NAME
                                 accessControlMaxAge: 100
                                 addVaryHeader: true
-                                allowedHosts: ['traefik.$DOMAIN_NAME']
+                                #allowedHosts: ['traefik.$DOMAIN_NAME']
                                 hostsProxyHeaders: ['X-Forwarded-Host']
                                 featurePolicy: "camera 'none'; geolocation 'none'; microphone 'none'; payment 'none'; usb 'none'; vr 'none';"
                                 #contentSecurityPolicy: "frame-ancestors 'none'; object-src 'none'; basic-uri 'none';"
@@ -93,7 +122,7 @@ http:
                                 #sslForceHost: true
                                 #sslHost: nextcloud.$DOMAIN_NAME
                                 sslProxyHeaders: 
-                                        X-Forwarded-Proto: https
+                                        X-Forwarded-Proto: 'https'
                                 referrerPolicy: 'no-referrer'
                                 customFrameOptionsValue: 'SAMEORIGIN'
                                 browserXssFilter: true

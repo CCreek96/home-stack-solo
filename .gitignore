@@ -154,11 +154,11 @@ telegraf/config/*
 telegraf/logs/*
 
 traefik/logs/*
+traefik/config/traefik.yml.bkp
 traefik/acme/*
 
-transmission/config/
-transmission/data/
-transmission/logs
+transmission/transmission.log
+transmission/stats.json
 
 varken/config/
 varken/data/

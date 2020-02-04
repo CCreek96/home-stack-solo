@@ -30,8 +30,50 @@ services:
                         - "443:443"
                         - "8080:8080"
                         - "8082:8082"
+                command:
+                        - "--global.checknewversion=true"
+                        - "--global.sendanonymoususage=false"
+                        - "--api.dashboard=true"
+                        - "--api.debug=true"
+                        - "--entrypoints.http.address=:80"
+                        - "--entrypoints.https.address=:443"
+                        - "--entrypoints.traefik.address=:8080"
+                        - "--entrypoints.metrics.address=:8082"
+                        - "--entrypoints.plex.address=:34200"
+                        #- "--certificatesresolvers.dns-cloudflare.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+                        - "--certificatesresolvers.dns-cloudflare.acme.email=$CLOUDFLARE_EMAIL"
+                        - "--certificatesresolvers.dns-cloudflare.acme.storage=/acme/acme.json"
+                        - "--certificatesresolvers.dns-cloudflare.acme.dnschallenge=true"
+                        - "--certificatesresolvers.dns-cloudflare.acme.dnschallenge.provider=cloudflare"
+                        - "--certificatesresolvers.dns-cloudflare.acme.dnschallenge.resolvers=1.1.1.1:53, 1.0.0.1:53"
+                        - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+                        - "--providers.docker.defaultrule=Host(`{{ index .Labels \"com.docker.compose.service\" }}`)"
+                        - "--providers.docker.network=traefik_proxy"
+                        - "--providers.docker.exposedbydefault=false"
+                        - "--providers.docker.swarmmode=false"
+                        - "--providers.file.filename=/rules.yml"
+                        - "--providers.file.watch=true"
+                        - "--log.level=INFO"
+                        - "--log.filepath=/logs/traefik.log"
+                        - "--log.format=json"
+                        - "--accesslog.filepath=/logs/access.log"
+                        - "--accesslog.format=json"
+                        - "--accesslog.bufferingsize=100"
+                        - "--accesslog.filters.statuscodes=100-199, 200-299, 300-399, 400-499, 500-599, 600-699"
+                        - "--accesslog.filters.retryattempts=true"
+                        - "--accesslog.filters.minduration=10ms"
+                        - "--accesslog.fields.defaultmode=keep"
+                        - "--accesslog.fields.names.clientusername=keep"
+                        - "--accesslog.fields.headers.defaultmode=keep"
+                        #- "--accesslog.fields.headers.names.user-agent=redact"
+                        #- "--accesslog.fields.headers.names.authorization=drop"
+                        - "--accesslog.fields.headers.names.content-type=keep"
+                        - "--metrics.prometheus.addentrypointslabels=true"
+                        - "--metrics.prometheus.addserviceslabels=true"
+                        - "--metrics.prometheus.entrypoint=metrics"
+                        - "--metrics.prometheus.buckets=0.1, 0.3, 1.2, 5.0"
                 volumes:
-                        - ./traefik/config/traefik.yml:/traefik.yml:ro
+                        #- ./traefik/config/traefik.yml:/traefik.yml
                         - ./traefik/config/rules.yml:/rules.yml:ro
                         - ./traefik/acme/acme.json:/acme/acme.json
                         - ./traefik/logs:/logs
@@ -40,6 +82,7 @@ services:
                         - /var/run/docker.sock:/var/run/docker.sock:ro
                 environment:
                         - TZ=$TZ
+                        - DOMAIN_NAME=$DOMAIN_NAME
                         - CF_API_EMAIL=$CLOUDFLARE_EMAIL
                         - CF_API_KEY=$CLOUDFLARE_API_KEY
                 #logging:
@@ -53,18 +96,22 @@ services:
                 labels:
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
-                        - "traefik.http.routers.http-catchall.entrypoints=http"
-                        - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
-                        - "traefik.http.routers.http-catchall.middlewares=https-redirect"
-                        - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
-                        - "traefik.http.routers.traefik-secure.entrypoints=https"
-                        - "traefik.http.routers.traefik-secure.rule=Host(`traefik.$DOMAIN_NAME`)" #&& (PathPrefix(`/api`) || PathPrefix(`/dashboard`) || PathPrefix(`/metrics`))"
-                        - "traefik.http.routers.traefik-secure.tls=true"
-                        - "traefik.http.routers.traefik-secure.tls.certresolver=dns-cloudflare"
-                        - "traefik.http.routers.traefik-secure.tls.domains[0].main=$DOMAIN_NAME"
-                        - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.$DOMAIN_NAME"
-                        - "traefik.http.routers.traefik-secure.middlewares=traefik-chain@file"
-                        - "traefik.http.routers.traefik-secure.service=api@internal"
+                        #- "traefik.http.routers.http-catchall.entrypoints=http"
+                        #- "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
+                        #- "traefik.http.routers.http-catchall.middlewares=https-redirect"
+                        #- "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+                        - "traefik.http.routers.traefik-rtr.entrypoints=https"
+                        - "traefik.http.routers.traefik-rtr.rule=Host(`traefik.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.traefik-rtr.tls=true"
+                        - "traefik.http.routers.traefik-rtr.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.traefik-rtr.tls.domains[0].main=$DOMAIN_NAME"
+                        - "traefik.http.routers.traefik-rtr.tls.domains[0].sans=*.$DOMAIN_NAME"
+                        - "traefik.http.routers.traefik-rtr.middlewares=traefik-chain@file, traefik-label-headers"
+                        - "traefik.http.middlewares.traefik-label-headers.headers.sslhost=traefik.$DOMAIN_NAME"
+                        - "traefik.http.middlewares.traefik-label-headers.headers.accesscontrolalloworigin=https://$DOMAIN_NAME"
+                        - "traefik.http.middlewares.traefik-label-headers.headers.allowedhosts=traefik.$DOMAIN_NAME"
+
+                        - "traefik.http.routers.traefik-rtr.service=api@internal"
 
         pihole:
                 container_name: pihole
@@ -288,16 +335,13 @@ services:
                 ports:
                         - "9091:9091"
                 volumes:
-                        - ./transmission/config/settings.json:/data/transmission-home/settings.json:ro
-                        - ./transmission/config/blocklists:/data/transmission-home/blocklists
-                        - ./transmission/data/stats.json:/data/transmission-home/stats.json
-                        - ./transmission/data/dht.dat:/data/transmission-home/dht.dat
-                        - ./transmission/logs/transmission.log:/data/transmission-home/transmission.log
+                        - ./transmission/transmission.log:/data/transmission-home/transmission.log
+                        - ./transmission/stats.json:/data/transmission-home/stats.json
                         - ./shared:/shared
                         - $MEDIA_PATH/downloads/complete:/downloads/complete
                         - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
-                        - $MEDIA_PATH/downloads/resume:/downloads/resume
-                        - $MEDIA_PATH/downloads/torrents:/downloads/torrents
+                        - $MEDIA_PATH/downloads/resume:/data/transmission-home/resume
+                        - $MEDIA_PATH/downloads/torrents:/data/transmission-home/torrents
                         - $MEDIA_PATH/watch:/watch
                         - /etc/localtime:/etc/localtime:ro
                 env_file:
@@ -550,9 +594,9 @@ services:
                 volumes:
                         - ./plex:/config/Library/'Application Support'/'Plex Media Server'
                         - ./shared:/shared
-                        - $MEDIA_PATH/tvshows:/tv:ro
-                        - $MEDIA_PATH/movies:/movies:ro
-                        - $MEDIA_PATH/music:/music:ro
+                        - $MEDIA_PATH/tvshows:/tv
+                        - $MEDIA_PATH/movies:/movies
+                        - $MEDIA_PATH/music:/music
                         - $MEDIA_PATH/photos:/photos:ro
                         - $MEDIA_PATH/tmp/transcode:/transcode
                         - /etc/localtime:/etc/localtime:ro
@@ -1046,4 +1090,19 @@ services:
                 environment:
                         - OPTIONS=system
                         - SLEEP=86400
+
+        ouroboros:
+                container_name: ouroboros
+                hostname: ouroboros
+                image: pyouroboros/ouroboros
+                restart: unless-stopped
+                volumes:
+                        - /var/run/docker.sock:/var/run/docker.sock
+                environment:
+                        - TZ=$TZ
+                        - CLEANUP=true
+                        - INTERVAL=300
+                        - LOG_LEVEL=info
+                        - SELF_UPDATE=true
+                        - IGNORE=prometheus influxdb postgres nextcloud plex
 
