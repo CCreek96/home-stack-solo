@@ -9,11 +9,11 @@ $CONFIG = array (
   'preview_libreoffice_path' => '/usr/bin/libreoffice',
   #'theme' => '',
 
-  # HTTP settings
+  # HTTP(S) settings
   'htaccess.RewriteBase' => '/',
-  'overwritehost' => 'nextcloud.'.getenv('DOMAIN_NAME'),
+  'overwritehost' => 'nextcloud.' . getenv('DOMAIN_NAME'),
   'overwriteprotocol' => 'https',
-  'overwrite.cli.url' => 'https://nextcloud.'.getenv('DOMAIN_NAME'),
+  'overwrite.cli.url' => 'https://nextcloud.' . getenv('DOMAIN_NAME'),
   'login_form_autocomplete' => false,
   'remember_login_cookie_lifetime' => 60*60*24*5,
   'session_lifetime' => 60*60*24,
@@ -29,8 +29,9 @@ $CONFIG = array (
   ),
   'forwarded_for_headers' =>
   array(
-    0 => 'HTTP_X_FORWARDED_FOR',
-    1 => 'HTTP_CF_CONNECTING_IP',
+    0 => 'HTTP_FORWARDED_FOR',
+    1 => 'HTTP_X_FORWARDED',
+    2 => 'HTTP_CF_CONNECTING_IP',
   ),
 
   # Redis settings
@@ -39,17 +40,16 @@ $CONFIG = array (
   'memcache.locking' => '\OC\Memcache\Redis',
   'redis' => array(
     'host' => getenv('REDIS_HOST'),
-    'password' => getenv('REDIS_HOST_PASSWORD'),
     'dbindex' => (int) getenv('REDIS_HOST_DBINDEX'),
   ),
 
   # Database settings
-  'dbtype' => 'pgsql',
-  'dbname' => getenv('POSTGRES_DB'),
-  'dbuser' => getenv('POSTGRES_USER'),
-  'dbpassword' => getenv('POSTGRES_PASSWORD'),
-  'dbhost' => getenv('POSTGRES_HOST'),
-  'dbtableprefix' => getenv('NEXTCLOUD_TABLE_PREFIX') ?: '',
+  #'dbtype' => 'pgsql',
+  #'dbname' => getenv('POSTGRES_DB'),
+  #'dbuser' => getenv('POSTGRES_USER'),
+  #'dbpassword' => getenv('POSTGRES_PASSWORD'),
+  #'dbhost' => getenv('POSTGRES_HOST'),
+  #'dbtableprefix' => getenv('NEXTCLOUD_TABLE_PREFIX') ?: '',
 
   # SMTP settings
   #'mail_smtpmode' => 'smtp',
@@ -71,10 +71,3 @@ $CONFIG = array (
   'logtimezone' => 'America/Chicago',
   'log_rotate_size' => 100*1024*1024, 
 );
-
-if (getenv('REDIS_HOST_PORT') !== false) {
-  $CONFIG['redis']['port'] = (int) getenv('REDIS_HOST_PORT');
-} elseif (getenv('REDIS_HOST')[0] != '/') {
-  $CONFIG['redis']['port'] = 6379;
-}
-

@@ -15,32 +15,6 @@ http:
                                - https-redirect
                        service: api@internal
 
-                #traefik:
-                #        entryPoints:
-                #                - 'https'
-                #        rule: 'Host(`traefik.$DOMAIN_NAME`) || (Host(`traefik.$DOMAIN_NAME`) && PathPrefix(`/api`)) || (Host(`traefik.$DOMAIN_NAME`) && PathPrefix(`/dashboard`))'
-                #        middlewares: 
-                #                - traefik-chain
-                #        service: api@internal
-                #        tls:
-                #                certResolver: dns-cloudflare
-                #                domains:
-                #                        - main: $DOMAIN_NAME
-                #                          sans: 
-                #                                - "*.$DOMAIN_NAME"
-
-
-
-                #metrics:
-                #        entryPoints: 'metrics'
-                #        rule: 'Host(`traefik.$DOMAIN_NAME`) && PathPrefix(`/metrics`)'
-                #        #middlewares: 
-                #        #        - traefik-chain
-                #        service: prometheus@internal 
-                #        #tls:
-                #        #        certResolver: dns-cloudflare@internal
-
-
         middlewares:
                 https-redirect:
                         redirectScheme:
@@ -48,6 +22,9 @@ http:
                 pihole-redirect:
                         addPrefix:
                                 prefix: '/admin'
+                transmission-redirect:
+                        addPrefix:
+                                prefix: '/web'
                 nc-redirect-1:
                         redirectRegex:
                                 regex: 'https://(.*)/.well-known/(card|cal)dav'
@@ -71,8 +48,6 @@ http:
                 default-headers:
                         headers:
                                 sslRedirect: true
-                                #sslForceHost: true
-                                #sslHost: $DOMAIN_NAME
                                 referrerPolicy: 'same-origin'
                                 customFrameOptionsValue: 'SAMEORIGIN'
                                 browserXssFilter: true
@@ -82,10 +57,30 @@ http:
                                 stsPreload: true
                                 stsSeconds: 15552000
                                 forceSTSHeader: true
-                                accessControlAllowMethods: ['GET, OPTIONS, PUT, POST, HEAD']
+                                accessControlAllowMethods: ['GET, OPTIONS, PUT, POST, HEAD, FETCH']
                                 accessControlMaxAge: 100
                                 hostsProxyHeaders: ['X-Forwarded-Host']
                                 featurePolicy: "camera 'none'; geolocation 'none'; microphone 'none'; payment 'none'; usb 'none'; vr 'none';" 
+                                #contentSecurityPolicy: "default-src 'none'; connect-src 'self'; font-src 'self' data: blob:; frame-ancestors 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' https://*.cloudflare.com 'unsafe-eval' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; form-action 'self';"
+                                customResponseHeaders:
+                                        X-Robots-Tag: 'none,noarchive,nosnippet,notranslate,noimageindex'
+                pihole-headers:
+                        headers:
+                                sslRedirect: true
+                                referrerPolicy: 'same-origin'
+                                customFrameOptionsValue: 'SAMEORIGIN'
+                                browserXssFilter: true
+                                contentTypeNosniff: true
+                                forceSTSHeader: true
+                                stsIncludeSubdomains: true
+                                stsPreload: true
+                                stsSeconds: 15552000
+                                forceSTSHeader: true
+                                accessControlAllowMethods: ['GET, OPTIONS, PUT, POST, HEAD, FETCH']
+                                accessControlMaxAge: 100
+                                hostsProxyHeaders: ['X-Forwarded-Host']
+                                featurePolicy: "camera 'none'; geolocation 'none'; microphone 'none'; payment 'none'; usb 'none'; vr 'none';" 
+                                contentSecurityPolicy: "default-src 'none'; connect-src 'self'; font-src 'self' data: blob:; frame-ancestors 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; script-src https://static.cloudflareinsights.com/ 'self'; img-src 'self' data:; base-uri 'self'; form-action 'self';"
                                 customResponseHeaders:
                                         X-Robots-Tag: 'none,noarchive,nosnippet,notranslate,noimageindex'
                 traefik-headers:
@@ -93,7 +88,6 @@ http:
                                 frameDeny: true
                                 sslRedirect: true
                                 sslForceHost: true
-                                #sslHost: traefik.$DOMAIN_NAME
                                 sslProxyHeaders: 
                                         X-Forwarded-Proto: 'https'
                                 referrerPolicy: 'same-origin'
@@ -106,7 +100,6 @@ http:
                                 stsSeconds: 63072000
                                 forceSTSHeader: true
                                 accessControlAllowMethods: ['GET, OPTIONS, PUT']
-                                #accessControlAllowOrigin: https://$DOMAIN_NAME
                                 accessControlMaxAge: 100
                                 addVaryHeader: true
                                 #allowedHosts: ['traefik.$DOMAIN_NAME']
@@ -119,8 +112,6 @@ http:
                 nextcloud-headers:
                         headers:
                                 sslRedirect: true
-                                #sslForceHost: true
-                                #sslHost: nextcloud.$DOMAIN_NAME
                                 sslProxyHeaders: 
                                         X-Forwarded-Proto: 'https'
                                 referrerPolicy: 'no-referrer'
@@ -136,8 +127,8 @@ http:
                                 accessControlAllowOrigin: '*'
                                 accessControlMaxAge: 100
                                 hostsProxyHeaders: ['X-Forwarded-Host']
-                                featurePolicy: "camera 'none'; geolocation 'none'; microphone 'none'; payment 'none'; usb 'none'; vr 'none';" 
-                                contentSecurityPolicy: "default-src 'self'; font-src 'self' data: blob:; frame-ancestors 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' https://*.nextcloud.com https://www.youtube.com data: blob:;"
+                                featurePolicy: "camera 'none'; geolocation 'self'; microphone 'none'; payment 'none'; usb 'none'; vr 'none';" 
+                                contentSecurityPolicy: "default-src 'none'; connect-src 'self'; font-src 'self' data: blob:; frame-ancestors 'self'; child-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.cloudflareinsights.com; img-src 'self' https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.se https://*.tile.opentopomap.org https://*.a.ssl.fastly.net https://server.arcgisonline.com https://*.nextcloud.com https://www.youtube.com data: blob:; base-uri 'self'; form-action 'self';"
                                 customResponseHeaders:
                                         X-Robots-Tag: 'none'
 
@@ -172,10 +163,17 @@ http:
                         chain:
                                 middlewares:
                                         #- default-whitelist
-                                        - default-headers
+                                        - pihole-headers
                                         - user-auth
                                         - rate-limit
                                         - pihole-redirect
+                plex-chain:
+                        chain:
+                                middlewares:
+                                        #- default-whitelist
+                                        #- default-headers
+                                        - rate-limit
+                                        #- transmission-redirect
                 nextcloud-chain:
                         chain:
                                 middlewares:

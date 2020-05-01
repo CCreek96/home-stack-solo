@@ -1,0 +1,10 @@
+CREATE USER homeassistant WITH PASSWORD 'homeassistantDB';
+CREATE USER varken WITH PASSWORD 'varkenDB';
+CREATE USER grafana WITH PASSWORD 'grafanaDB';
+CREATE DATABASE "homeassistant" WITH DURATION 30d REPLICATION 1 SHARD DURATION 1d NAME "one_month";
+CREATE DATABASE "varken" WITH DURATION 30d REPLICATION 1 SHARD DURATION 1d NAME "one_month";
+GRANT ALL ON "varken" TO "varken";
+GRANT ALL ON "homeassistant" TO "homeassistant";
+GRANT READ ON "_internal" TO "grafana";
+GRANT READ ON "varken" TO "grafana";
+GRANT READ ON "homeassistant" TO "grafana";

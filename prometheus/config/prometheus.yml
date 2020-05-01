@@ -42,6 +42,13 @@ scrape_configs:
     honor_labels: true
     static_configs:
       - targets: ['telegraf:9273']
+  
+  - job_name: 'ouroboros'
+    scrape_interval: 5s
+    scrape_timeout: 2s
+    honor_labels: true
+    static_configs:
+      - targets: ['ouroboros:8000']
 
 # Alerting specifies settings related to the Alertmanager.
 alerting:

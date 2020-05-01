@@ -4,10 +4,36 @@ networks:
 
         traefik_proxy:
                 external: true
+        media_proxy:
+               driver: bridge
+        socket_proxy:
+                driver: bridge
         default:
                 driver: bridge
 
+volumes:
+        transcode:
+                driver_opts:
+                        type: tmpfs
+                        device: tmpfs
+
 services:
+
+        dockerproxy:
+                container_name: dockerproxy
+                image: tprasadtp/docker-socket-proxy
+                hostname: dockerproxy
+                restart: unless-stopped
+                networks: 
+                        - socket_proxy
+                ports:
+                        - "127.0.0.1:2375:2375"
+                volumes:
+                        - "/var/run/docker.sock:/var/run/docker.sock:ro"
+                environment:
+                        - CONTAINERS=1
+                labels:
+                        - "com.ouroboros.enabled=false"
 
         traefik:
                 container_name: traefik
@@ -17,19 +43,23 @@ services:
                 healthcheck:
                         test: ping -c 2 traefik || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
                         - no-new-privileges:true
                 networks:
                         - traefik_proxy
+                        - socket_proxy
                         - default
                 ports:
                         - "80:80"
-                        - "443:443"
+                        - "443:443/tcp"
+                        - "443:443/udp"
                         - "8080:8080"
                         - "8082:8082"
+                        - "34200:34200/tcp"
+                        - "34200:34200/udp"
                 command:
                         - "--global.checknewversion=true"
                         - "--global.sendanonymoususage=false"
@@ -46,14 +76,14 @@ services:
                         - "--certificatesresolvers.dns-cloudflare.acme.dnschallenge=true"
                         - "--certificatesresolvers.dns-cloudflare.acme.dnschallenge.provider=cloudflare"
                         - "--certificatesresolvers.dns-cloudflare.acme.dnschallenge.resolvers=1.1.1.1:53, 1.0.0.1:53"
-                        - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+                        - "--providers.docker.endpoint=tcp://dockerproxy:2375"
                         - "--providers.docker.defaultrule=Host(`{{ index .Labels \"com.docker.compose.service\" }}`)"
                         - "--providers.docker.network=traefik_proxy"
                         - "--providers.docker.exposedbydefault=false"
                         - "--providers.docker.swarmmode=false"
-                        - "--providers.file.filename=/rules.yml"
+                        - "--providers.file.filename=/config/rules.yml"
                         - "--providers.file.watch=true"
-                        - "--log.level=INFO"
+                        - "--log.level=DEBUG"
                         - "--log.filepath=/logs/traefik.log"
                         - "--log.format=json"
                         - "--accesslog.filepath=/logs/access.log"
@@ -73,33 +103,27 @@ services:
                         - "--metrics.prometheus.entrypoint=metrics"
                         - "--metrics.prometheus.buckets=0.1, 0.3, 1.2, 5.0"
                 volumes:
-                        #- ./traefik/config/traefik.yml:/traefik.yml
-                        - ./traefik/config/rules.yml:/rules.yml:ro
-                        - ./traefik/acme/acme.json:/acme/acme.json
+                        - ./traefik/config:/config:ro
+                        - ./traefik/acme:/acme
                         - ./traefik/logs:/logs
                         - ./shared:/shared
                         - /etc/localtime:/etc/localtime:ro
-                        - /var/run/docker.sock:/var/run/docker.sock:ro
                 environment:
                         - TZ=$TZ
                         - DOMAIN_NAME=$DOMAIN_NAME
                         - CF_API_EMAIL=$CLOUDFLARE_EMAIL
                         - CF_API_KEY=$CLOUDFLARE_API_KEY
-                #logging:
-                #        options:
-                #                max-size: "12m"
-                #                max-file: "5"
-                #        driver: json-file
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 depends_on:
-                        - influxdb
-                        - prometheus
+                        - dockerproxy
                 labels:
+                        - "com.ouroboros.enable=false"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
-                        #- "traefik.http.routers.http-catchall.entrypoints=http"
-                        #- "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
-                        #- "traefik.http.routers.http-catchall.middlewares=https-redirect"
-                        #- "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
                         - "traefik.http.routers.traefik-rtr.entrypoints=https"
                         - "traefik.http.routers.traefik-rtr.rule=Host(`traefik.$DOMAIN_NAME`)"
                         - "traefik.http.routers.traefik-rtr.tls=true"
@@ -110,18 +134,17 @@ services:
                         - "traefik.http.middlewares.traefik-label-headers.headers.sslhost=traefik.$DOMAIN_NAME"
                         - "traefik.http.middlewares.traefik-label-headers.headers.accesscontrolalloworigin=https://$DOMAIN_NAME"
                         - "traefik.http.middlewares.traefik-label-headers.headers.allowedhosts=traefik.$DOMAIN_NAME"
-
                         - "traefik.http.routers.traefik-rtr.service=api@internal"
 
         pihole:
                 container_name: pihole
                 hostname: pihole
-                image: pihole/pihole:latest
+                image: pihole/pihole:v4.4
                 restart: unless-stopped
                 healthcheck:
-                        test: date || exit 1
+                        test: dig @127.0.0.1 pi.hole || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 cap_add:
@@ -131,12 +154,18 @@ services:
                         - 1.1.1.1
                 networks:
                         - traefik_proxy
+                        - default
                 ports:
                           - "53:53/tcp"
                           - "53:53/udp"
                           - "67:67/udp"
                           - "8182:80/tcp"
                           - "8183:443/tcp"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./pihole/pihole:/etc/pihole
                         - ./pihole/dnsmasq.d:/etc/dnsmasq.d
@@ -150,7 +179,11 @@ services:
                         - DNS1=$ROUTER_IP
                         - DNS2=no
                         - WEBPASSWORD=$ADMIN_PASSWORD
+                        - VIRTUAL_HOST=pihole.$DOMAIN_NAME
+                        - DNSMASQ_LISTENING=all
+                        - DNSMASQ_USER=pihole
                 labels:
+                        - "com.ouroboros.enable=false"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.pihole-secure.entrypoints=https"
@@ -161,76 +194,6 @@ services:
                         - "traefik.http.routers.pihole-secure.service=pihole"
                         - "traefik.http.services.pihole.loadbalancer.server.port=80"
 
-        heimdall:
-                container_name: heimdall
-                hostname: heimdall
-                image: linuxserver/heimdall:latest
-                restart: unless-stopped
-                healthcheck:
-                        test: date || exit 1
-                        start_period: 1m
-                        interval: 2m
-                        timeout: 10s
-                        retries: 3
-                networks:
-                        - traefik_proxy
-                volumes:
-                        - ./heimdall/keys:/config/keys
-                        - ./heimdall/logs:/config/log
-                        - ./heimdall/nginx:/config/nginx
-                        - ./heimdall/php:/config/php
-                        - ./heimdall/www:/config/www
-                        - /etc/localtime:/etc/localtime:ro
-                environment:
-                        - TZ=$TZ
-                        - PUID=$PUID
-                        - PGID=$PGID
-                labels:
-                        - "traefik.enable=true"
-                        - "traefik.docker.network=traefik_proxy"
-                        - "traefik.http.routers.heimdall-secure.entrypoints=https"
-                        - "traefik.http.routers.heimdall-secure.rule=Host(`heimdall.$DOMAIN_NAME`)"
-                        - "traefik.http.routers.heimdall-secure.tls=true"
-                        - "traefik.http.routers.heimdall-secure.middlewares=secure-chain@file"
-                        - "traefik.http.routers.heimdall-secure.tls.certresolver=dns-cloudflare"
-                        - "traefik.http.routers.heimdall-secure.service=heimdall"
-                        - "traefik.http.services.heimdall.loadbalancer.server.port=80"
-
-        organizr:
-                container_name: organizr
-                hostname: organizr
-                image: linuxserver/organizr:latest
-                restart: unless-stopped
-                healthcheck:
-                        test: date || exit 1
-                        start_period: 1m
-                        interval: 2m
-                        timeout: 10s
-                        retries: 3
-                security_opt:
-                        - no-new-privileges:true
-                networks:
-                        - traefik_proxy
-                volumes:
-                        - ./organizr:/config
-                        - ./shared:/shared
-                        - /etc/localtime:/etc/localtime:ro
-                environment:
-                        - TZ=$TZ
-                        - PUID=$PUID
-                        - PGID=$PGID
-                labels:
-                        - "traefik.enable=true"
-                        - "traefik.docker.network=traefik_proxy"
-                        - "traefik.http.routers.organizr-secure.entrypoints=https"
-                        - "traefik.http.routers.organizr-secure.rule=Host(`organizr.$DOMAIN_NAME`)"
-                        - "traefik.http.routers.organizr-secure.tls=true"
-                        - "traefik.http.routers.organizr-secure.tls.certresolver=dns-cloudflare"
-                        - "traefik.http.routers.organizr-secure.middlewares=noauth-chain@file"
-                        - "traefik.http.routers.organizr-secure.service=organizr"
-                        - "traefik.http.services.organizr.loadbalancer.server.port=80"
-        
-
         homeassistant:
                 container_name: homeassistant
                 hostname: homeassistant
@@ -240,11 +203,16 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 networks:
                         - traefik_proxy
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./homeassistant/.cloud:/config/.cloud
                         - ./homeassistant/deps:/config/deps
@@ -262,14 +230,15 @@ services:
                         - ./homeassistant/data/home-assistant_v2.db:/config/home-assistant_v2.db
                         - ./homeassistant/data/home-assistant_v2.db-shm:/config/home-assistant_v2.db-shm
                         - ./homeassistant/data/home-assistant_v2.db-wal:/config/home-assistant_v2.db-wal
-                        - ./shared:/shared
                         - /etc/localtime:/etc/localtime:ro
                         - /var/run/docker.sock:/var/run/docker.sock:ro
                 environment:
                         - TZ=$TZ
                         - PUID=$PUID
                         - PGID=$PGID
+                        - $DOMAIN_NAME=$DOMAIN_NAME
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.homeassistant-secure.entrypoints=https"
@@ -289,11 +258,16 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 networks:
                         - default
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 ports:
                         - "1883:1883"
                         - "9001:9001"
@@ -302,12 +276,13 @@ services:
                         - ./mosquitto/config/passwd:/mosquitto/config/passwd
                         - ./mosquitto/data:/mosquitto/data
                         - ./mosquitto/logs:/mosquitto/logs
-                        - ./shared:/shared
                         - /etc/localtime:/etc/localtime:ro
                 environment:
                         - TZ=$TZ
                         - PUID=$PUID
                         - PGID=$PGID
+                labels:
+                        - "com.ouroboros.enable=true"
 
         transmission:
                 container_name: transmission
@@ -315,9 +290,10 @@ services:
                 image: haugene/transmission-openvpn:latest-armhf
                 restart: unless-stopped
                 healthcheck:
-                        test: date || exit 1
+                        #test: date || exit 1
+                        test: /etc/scripts/healthcheck.sh || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
@@ -331,18 +307,25 @@ services:
                         - 1.0.0.1
                 networks:
                         - traefik_proxy
-                        - default
+                        - media_proxy
+                          #- default
                 ports:
                         - "9091:9091"
+                        - "8888:8888/tcp"
+                        - "8888:8888/udp"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./transmission/transmission.log:/data/transmission-home/transmission.log
                         - ./transmission/stats.json:/data/transmission-home/stats.json
-                        - ./shared:/shared
-                        - $MEDIA_PATH/downloads/complete:/downloads/complete
-                        - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
-                        - $MEDIA_PATH/downloads/resume:/data/transmission-home/resume
-                        - $MEDIA_PATH/downloads/torrents:/data/transmission-home/torrents
-                        - $MEDIA_PATH/watch:/watch
+                        - $DOWNLOAD_PATH/complete:/downloads/complete
+                        - $DOWNLOAD_PATH/incomplete:/downloads/incomplete
+                        - $DOWNLOAD_PATH/watch/:/downloads/watch
+                        - $DOWNLOAD_PATH/resume:/data/transmission-home/resume
+                        - $DOWNLOAD_PATH/torrents:/data/transmission-home/torrents
                         - /etc/localtime:/etc/localtime:ro
                 env_file:
                         - ./shared/env-files/transmission.env
@@ -357,6 +340,7 @@ services:
                         - TRANSMISSION_RPC_USERNAME=$TRANSMISSION_USERNAME
                         - TRANSMISSION_RPC_PASSWORD=$ADMIN_PASSWORD
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.transmission-secure.entrypoints=https"
@@ -367,6 +351,91 @@ services:
                         - "traefik.http.routers.transmission-secure.service=transmission"
                         - "traefik.http.services.transmission.loadbalancer.server.port=9091"
 
+        nzbget:
+                container_name: nzbget
+                hostname: nzbget
+                image: linuxserver/nzbget
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 5m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - media_proxy
+                #ports:
+                #        - "6789:6789"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                volumes:
+                        - ./nzbget:/config
+                        - $DOWNLOAD_PATH:/downloads
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                labels:
+                        - "com.ouroboros.enable=true"
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.nzbget-rtr.entrypoints=https"
+                        - "traefik.http.routers.nzbget-rtr.rule=Host(`nzbget.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.nzbget-rtr.tls=true"
+                        - "traefik.http.routers.nzbget-rtr.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.nzbget-rtr.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.nzbget-rtr.service=nzbget"
+                        - "traefik.http.services.nzbget.loadbalancer.server.port=6789"
+
+        ressync:
+                container_name: ressync
+                hostname: ressync
+                image: linuxserver/resilio-sync
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 5m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - media_proxy
+                ports:
+                        - "55555:55555"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
+                volumes:
+                        - ./ressync/config:/config
+                        - $DOWNLOAD_PATH/ressync/downloads:/downloads
+                        - $DOWNLOAD_PATH/ressync/sync:/sync
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - UMASK_SET=022
+                labels:
+                        - "com.ouroboros.enable=true"
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.ressync-rtr.entrypoints=https"
+                        - "traefik.http.routers.ressync-rtr.rule=Host(`ressync.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.ressync-rtr.tls=true"
+                        - "traefik.http.routers.ressync-rtr.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.ressync-rtr.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.ressync-rtr.service=ressync"
+                        - "traefik.http.services.ressync.loadbalancer.server.port=8888"
+
         radarr:
                 container_name: radarr
                 hostname: radarr
@@ -375,24 +444,28 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
                         - no-new-privileges:true
                 networks:
                         - traefik_proxy
-                        - default
+                        - media_proxy
+                        #- default
                 ports:
                         - "7878:7878"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./radarr:/config
-                        - ./radarr/logs:/config/logs
-                        - ./shared:/shared
-                        - ${MEDIA_PATH}/downloads:/downloads
-                        - ${MEDIA_PATH}/downloads/complete:/downloads/complete
-                        - ${MEDIA_PATH}/downloads/incomplete:/downloads/incomplete
-                        - ${MEDIA_PATH}/movies:/movies
+                        - $DOWNLOAD_PATH/watch/:/downloads/watch
+                        - $DOWNLOAD_PATH/complete:/downloads/complete
+                        - $DOWNLOAD_PATH/incomplete:/downloads/incomplete
+                        - $MEDIA_PATH/movies:/movies
                         - /etc/localtime:/etc/localtime:ro
                 environment:
                         - TZ=$TZ
@@ -400,6 +473,7 @@ services:
                         - PGID=$PGID
                         - UMASK_SET=022
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.radarr-secure.entrypoints=https"
@@ -418,34 +492,27 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
                         - no-new-privileges:true
                 networks:
                         - traefik_proxy
-                        - default
+                        - media_proxy
+                        #- default
                 ports:
                         - "8989:8989"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
-                        - ./sonarr/config/config.xml:/config/config.xml
-                        - ./sonarr/config/xdg:/config/xdg
-                        - ./sonarr/config/nzbdrone.pid:/config/nzbdrone.pid
-                        - ./sonarr/data/Backups:/config/Backups
-                        - ./sonarr/data/MediaCover:/config/MediaCover
-                        - ./sonarr/data/NzbDrone:/opt/NzbDrone
-                        - ./sonarr/data/nzbdrone.db:/config/nzbdrone.db
-                        - ./sonarr/data/nzbdrone.db-shm:/config/nzbdrone.db-shm
-                        - ./sonarr/data/nzbdrone.db-wal:/config/nzbdrone.db-wal
-                        - ./sonarr/logs:/config/logs
-                        - ./sonarr/logs/logs.db:/config/logs.db
-                        - ./sonarr/logs/logs.db-shm:/config/logs.db-shm
-                        - ./sonarr/logs/logs.db-wal:/config/logs.db-wal
-                        - ./shared:/shared
-                        - $MEDIA_PATH/downloads:/downloads
-                        - $MEDIA_PATH/downloads/complete:/downloads/complete
-                        - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
+                        - ./sonarr:/config
+                        - $DOWNLOAD_PATH/complete:/downloads/complete
+                        - $DOWNLOAD_PATH/incomplete:/downloads/incomplete
+                        - $DOWNLOAD_PATH/watch:/downloads/watch
                         - $MEDIA_PATH/tvshows:/tv
                         - /etc/localtime:/etc/localtime:ro
                 environment:
@@ -454,6 +521,7 @@ services:
                         - PGID=$PGID
                         - UMASK_SET=022
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.sonarr-secure.entrypoints=https"
@@ -472,34 +540,28 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
                         - no-new-privileges:true
                 networks:
                         - traefik_proxy
-                        - default
+                        - media_proxy
+                        #- default
                 ports:
                         - "8686:8686"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
-                        - ./lidarr/config/config.xml:/config/config.xml
-                        - ./lidarr/config/.config:/config/.config
-                        - ./lidarr/config/lidarr.pid:/config/lidarr.pid
-                        - ./lidarr/data/lidarr.db:/config/lidarr.db
-                        - ./lidarr/data/lidarr.db-shm:/config/lidarr.db-shm
-                        - ./lidarr/data/lidarr.db-wal:/config/lidarr.db-wal
-                        - ./lidarr/data/Backups:/config/Backups
-                        - ./lidarr/data/MediaCover:/config/MediaCover
-                        - ./lidarr/logs:/config/logs
-                        - ./lidarr/logs/logs.db:/config/logs.db
-                        - ./lidarr/logs/logs.db-shm:/config/logs.db-shm
-                        - ./lidarr/logs/logs.db-wal:/config/logs.db-wal
-                        - ./shared:/shared
-                        - $MEDIA_PATH/downloads:/downloads
-                        - $MEDIA_PATH/downloads/complete:/downloads/complete
-                        - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
-                        - $MEDIA_PATH/music:/music
+                        - ./lidarr:/config
+                        - $DOWNLOAD_PATH/complete:/downloads/complete
+                        - $DOWNLOAD_PATH/incomplete:/downloads/incomplete
+                        - $DOWNLOAD_PATH/watch:/downloads/watch
+                        - $MUSIC_PATH:/music
                         - /etc/localtime:/etc/localtime:ro
                 environment:
                         - TZ=$TZ
@@ -507,6 +569,7 @@ services:
                         - PGID=$PGID
                         - UMASK_SET=022
                 labels:
+                        - "com.ouroboros.enable=false"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.lidarr-secure.entrypoints=https"
@@ -516,6 +579,96 @@ services:
                         - "traefik.http.routers.lidarr-secure.middlewares=secure-chain@file"
                         - "traefik.http.routers.lidarr-secure.service=lidarr"
                         - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
+        lazylibrarian:
+                container_name: lazylibrarian
+                hostname: lazylibrarian
+                image: linuxserver/lazylibrarian:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 5m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - media_proxy
+                expose:
+                        - "5299"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
+                volumes:
+                        - ./lazylibrarian:/config
+                        - $DOWNLOAD_PATH:/downloads
+                        - $DOWNLOAD_PATH/complete:/downloads/complete
+                        - $DOWNLOAD_PATH/incomplete:/downloads/incomplete
+                        - $DOWNLOAD_PATH/watch:/downloads/watch
+                        - $BOOKS_PATH:/books
+                environment:
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - TZ=$TZ
+                labels:
+                        - "com.ouroboros.enable=true"
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.lazylibrarian-rtr.entrypoints=https"
+                        - "traefik.http.routers.lazylibrarian-rtr.rule=Host(`lazylibrarian.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.lazylibrarian-rtr.tls=true"
+                        - "traefik.http.routers.lazylibrarian-rtr.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.lazylibrarian-rtr.middlewares=secure-chain@file"
+                        - "traefik.http.routers.lazylibrarian-rtr.service=lazylibrarian"
+                        - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"
+
+
+        bazarr:
+                container_name: bazarr
+                hostname: bazarr
+                image: linuxserver/bazarr
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 5m
+                        timeout: 10s
+                        retries: 3
+                security_opt:
+                        - no-new-privileges:true
+                networks:
+                        - traefik_proxy
+                        - media_proxy
+                ports:
+                        - "6767:6767"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
+                volumes:
+                        - ./bazarr:/config
+                        - $MEDIA_PATH/movies:/movies
+                        - $MEDIA_PATH/tvshows:/tv
+                environment:
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - TZ=$TZ
+                        - UMASK_SET=022
+                labels:
+                        - "com.ouroboros.enable=true"
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.bazarr-secure.entrypoints=https"
+                        - "traefik.http.routers.bazarr-secure.rule=Host(`bazarr.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.bazarr-secure.tls=true"
+                        - "traefik.http.routers.bazarr-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.bazarr-secure.middlewares=secure-chain@file"
+                        - "traefik.http.routers.bazarr-secure.service=bazarr"
+                        - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
 
         jackett:
                 container_name: jackett
@@ -525,32 +678,34 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
                         - no-new-privileges:true
                 #expose:
                 ports:
-                        - "9117"
+                        - "9117:9117"
                 #network_mode: container:transmission-vpn
                 networks:
                         - traefik_proxy
+                        - media_proxy
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
-                        - ./jackett/logs:/config/Jackett/logs
-                        - ./jackett/data/DataProtection:/config/Jackett/DataProtection
-                        - ./jackett/data/Indexers:/config/Jackett/Indexers
-                        - ./jackett/config/ServerConfig.json:/config/Jackett/ServerConfig.json
-                        - ./shared:/shared
-                        - $MEDIA_PATH/downloads:/downloads
-                        - $MEDIA_PATH/downloads/complete:/downloads/complete
-                        - $MEDIA_PATH/downloads/incomplete:/downloads/incomplete
+                        - ./jackett:/config/Jackett
+                        - $DOWNLOAD_PATH/watch:/watch
                         - /etc/localtime:/etc/localtime:ro
                 environment:
                         - TZ=$TZ
                         - PUID=$PUID
                         - PGID=$PGID
+                        - RUN_OPTS=--ProxyConnection=transmission:8888
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.jackett-secure.entrypoints=https"
@@ -569,12 +724,14 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 networks:
                         - traefik_proxy
-                        - default
+                        - media_proxy
+                        #- default
+                #network_mode: host
                 devices:
                         - /dev/dri:/dev/dri
                 ports:
@@ -591,27 +748,45 @@ services:
                         - "32469:32469/tcp"
                         - "32469:32469/udp"
                         - "33400:33400"
+                        - "33443:33443"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
-                        - ./plex:/config/Library/'Application Support'/'Plex Media Server'
-                        - ./shared:/shared
+                        - ./plex/crash-reports:/config/Library/Application Support/Plex Media Server/Crash Reports
+                        - ./plex/logs:/config/Library/Application Support/Plex Media Server/Logs
+                        - ./plex/media:/config/Library/Application Support/Plex Media Server/Media
+                        - ./plex/metadata:/config/Library/Application Support/Plex Media Server/Metadata
+                        - ./plex/plugins:/config/Library/Application Support/Plex Media Server/Plug-ins
+                        - ./plex/plugin-support:/config/Library/Application Support/Plex Media Server/Plug-in Support
+                        - ./plex/preferences.xml:/config/Library/Application Support/Plex Media Server/Preferences.xml
+                        #- ./plex:/config
+                        - $MEDIA_PATH/plex-prerolls:/prerolls
                         - $MEDIA_PATH/tvshows:/tv
                         - $MEDIA_PATH/movies:/movies
-                        - $MEDIA_PATH/music:/music
-                        - $MEDIA_PATH/photos:/photos:ro
-                        - $MEDIA_PATH/tmp/transcode:/transcode
+                        #- $MEDIA_PATH/music:/music
+                        - $MUSIC_PATH:/music
+                        - $BOOKS_PATH:/books
+                        - $MEDIA_PATH/photos:/photos
                         - /etc/localtime:/etc/localtime:ro
+                        - transcode:/transcode
                 environment:
-                        - TZ=$TZ
                         - PUID=$PUID
                         - PGID=$PGID
+                        - TZ=$TZ
                         - HOSTNAME=$PLEX_HOSTNAME
-                        #- PLEX_CLAIM=$PLEX_CLAIM
+                        - PLEX_CLAIM=$PLEX_CLAIM
                         - ADVERTISE_IP=$PLEX_IP
                         - VERSION=docker
                         - UMASK_SET=022
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
+                        #- "traefik.tcp.routers.plex-tcp-rtr.entrypoints=plex"
+                        #- "traefik.tcp.routers.plex-tcp-rtr.rule="
                         - "traefik.http.routers.plex-secure.entrypoints=https"
                         - "traefik.http.routers.plex-secure.rule=Host(`plex.$DOMAIN_NAME`)"
                         - "traefik.http.routers.plex-secure.tls=true"
@@ -619,6 +794,81 @@ services:
                         - "traefik.http.routers.plex-secure.middlewares=noauth-chain@file"
                         - "traefik.http.routers.plex-secure.service=plex"
                         - "traefik.http.services.plex.loadbalancer.server.port=32400"
+
+        plex-test:
+                container_name: plex-test
+                hostname: plex-test
+                image: linuxserver/plex:latest
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 5m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - traefik_proxy
+                        - media_proxy
+                        #- default
+                #network_mode: host
+                devices:
+                        - /dev/dri:/dev/dri
+                #ports:
+                #        - "32400:32400/tcp"
+                #        - "32400:32400/udp"
+                #        - "3005:3005/tcp"
+                #        - "8324:8324/tcp"
+                #        - "1900:1900/udp"
+                #        - "5354:5353/udp"
+                #        - "32410:32410/udp"
+                #        - "32412:32412/udp"
+                #        - "32413:32413/udp"
+                #        - "32414:32414/udp"
+                #        - "32469:32469/tcp"
+                #        - "32469:32469/udp"
+                #        - "33400:33400"
+                #        - "33443:33443"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
+                volumes:
+                        - ./plex-test:/config
+                        #- ./shared:/shared
+                        - $MEDIA_PATH/plex-prerolls:/prerolls
+                        #- $MEDIA_PATH/tvshows:/tv
+                        - $MEDIA_PATH/movies:/movies
+                        #- $MEDIA_PATH/music:/music
+                        #- $MEDIA_PATH/photos:/photos
+                        #- $MEDIA_PATH/tmp/transcode:/transcode
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - PUID=$PUID
+                        - PGID=$PGID
+                        - TZ=$TZ
+                        - HOSTNAME=plex-test
+                        - PLEX_CLAIM=claim-jxHbBCNeYk8_eCwRSivE
+                        - ADVERTISE_IP=https://plex-test.$DOMAIN_NAME:32400
+                        - VERSION=docker
+                        - UMASK_SET=022
+                labels:
+                        - "com.ouroboros.enable=false"
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.tcp.routers.plex-tcp-rtr.entrypoints=plex"
+                        - "traefik.tcp.routers.plex-tcp-rtr.rule=HostSNI(`plex-test.$DOMAIN_NAME`)"
+                        - "traefik.tcp.routers.plex-tcp-rtr.service=plex-test"
+                        - "traefik.tcp.routers.plex-tcp-rtr.tls.passthrough=true"
+                        - "traefik.tcp.routers.plex-tcp-rtr.tls.certresolver=dns-cloudflare"
+                        #- "traefik.tcp.services.plex-test."
+                        - "traefik.http.routers.plex-test-rtr.entrypoints=https"
+                        - "traefik.http.routers.plex-test-rtr.rule=Host(`plex-test.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.plex-test-rtr.tls=true"
+                        - "traefik.http.routers.plex-test-rtr.tls.certresolver=dns-cloudflare"
+                        #- "traefik.http.routers.plex-test-rtr.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.plex-test-rtr.service=plex-test"
+                        - "traefik.http.services.plex-test.loadbalancer.server.port=32400"
 
         tautulli:
                 container_name: tautulli
@@ -628,27 +878,32 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
                         - no-new-privileges:true
                 networks:
                         - traefik_proxy
-                        - default
+                        - media_proxy
                 ports: 
-                        - "8181"
+                        - "8181:8181"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./tautulli:/config
                         - ./tautulli/logs:/logs
-                        - ./plex/Logs:/plex-logs:ro
-                        - ./shared:/shared
+                        - ./plex/logs:/plex-logs:ro
                         - /etc/localtime:/etc/localtime:ro
                 environment:
                         - TZ=$TZ
                         - PUID=$PUID
                         - PGID=$PGID
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.tautulli-secure.entrypoints=https"
@@ -658,25 +913,64 @@ services:
                         - "traefik.http.routers.tautulli-secure.middlewares=noauth-chain@file"
                         - "traefik.http.routers.tautulli-secure.service=tautulli"
                         - "traefik.http.services.tautulli.loadbalancer.server.port=8181"
+        ombi:
+                container_name: ombi
+                hostname: ombi
+                image: linuxserver/ombi
+                #user: $PUID:$PGID
+                restart: unless-stopped
+                networks:
+                        - traefik_proxy
+                        - media_proxy
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
+                volumes:
+                        - ./ombi:/config
+                        - /etc/localtime:/etc/localtime:ro
+                environment:
+                        - TZ=$TZ
+                        - PUID=$PUID
+                        - PGID=$PGID
+                labels:
+                        - "com.ouroboros.enable=true"
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.ombi-secure.entrypoints=https"
+                        - "traefik.http.routers.ombi-secure.rule=Host(`ombi.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.ombi-secure.tls=true"
+                        - "traefik.http.routers.ombi-secure.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.ombi-secure.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.ombi-secure.service=ombi"
+                        - "traefik.http.services.ombi.loadbalancer.server.port=3579"
+
 
         varken:
                 container_name: varken
                 hostname: varken
                 image: boerderij/varken:latest
+                user: $PUID:$PGID
                 restart: unless-stopped
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
                         - no-new-privileges:true
                 networks:
+                        - media_proxy
                         - default
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
-                        - ./varken/data/GeoLite2-City.mmdb:/config/GeoLite2-City.mmdb
-                        - ./varken/logs:/config/logs
+                        - ./varken/:/config
                         - /etc/localtime:/etc/localtime:ro
                 env_file:
                         - ./shared/env-files/varken.env
@@ -691,8 +985,11 @@ services:
                         - VRKN_SONARR_1_APIKEY=$SONARR_API_KEY
                         - VRKN_RADARR_1_APIKEY=$RADARR_API_KEY
                         - VRKN_LIDARR_1_APIKEY=$LIDARR_API_KEY
+                        - VRKN_OMBI_1_APIKEY=$OMBI_API_KEY
                 depends_on:
                         - influxdb
+                labels:
+                        - "com.ouroboros.enable=true"
                 
         nextcloud:
                 container_name: nextcloud
@@ -702,24 +999,22 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 networks:
                         - traefik_proxy
                         - default
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./nextcloud:/var/www/html
-                        - ./nextcloud/config:/var/www/html/config
                         - ./nextcloud/config/custom.config.php:/var/www/html/config/custom.config.php:ro
-                        - ./nextcloud/config/autoconfig.php:/var/www/html/config/autoconfig.php:ro
-                        - ./nextcloud/custom_apps:/var/www/html/custom_apps
-                        #- ./nextcloud/logs:/var/log/nextcloud
-                        #- ./nextcloud/logs:/var/log/apache2
-                        - ./nextcloud/themes:/var/www/html/themes
-                        - $SHARED_PATH/nextcloud:/opt/data
+                        - $NC_DATA_PATH/nextcloud:/opt/data
                         - ./postgres/sock:/var/run/postgresql
-                        - ./shared:/shared
                         - /dev/urandom:/dev/urandom:ro
                         - /etc/localtime:/etc/localtime:ro
                 env_file:
@@ -728,7 +1023,9 @@ services:
                         - TZ=$TZ
                         - PUID=$PUID
                         - PGID=$PGID
+                        - NEXTCLOUD_UPDATE=1
                         - DOMAIN_NAME=$DOMAIN_NAME
+                        - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.$DOMAIN_NAME
                         - POSTGRES_HOST=$POSTGRES_HOST
                         - POSTGRES_DB=$NEXTCLOUD_DB
                         - POSTGRES_USER=$NEXTCLOUD_DB_USER
@@ -736,13 +1033,11 @@ services:
                         - REDIS_HOST=$REDIS_HOST
                         - REDIS_HOST_PORT=$REDIS_PORT
                         - REDIS_HOST_PASSWORD=$REDIS_PASSWORD
-                        - NEXTCLOUD_ADMIN_USER=$NEXTCLOUD_ADMIN_USER
-                        - NEXTCLOUD_ADMIN_PASSWORD=$ADMIN_PASSWORD
                 depends_on:
-                        - influxdb
                         - postgres
                         - redis
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.nextcloud-secure.entrypoints=https"
@@ -752,88 +1047,6 @@ services:
                         - "traefik.http.routers.nextcloud-secure.middlewares=nextcloud-chain@file"
                         - "traefik.http.routers.nextcloud-secure.service=nextcloud"
                         - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
-#        fpm-nextcloud:
-#                container_name: fpm-nextcloud
-#                hostname: fpm-nextcloud
-#                #build: 
-#                #        context: ./shared/dockerfiles
-#                #        dockerfile: Dockerfile-nextcloud
-#                image: nextcloud:fpm
-#                restart: unless-stopped
-#                healthcheck:
-#                        test: date || exit 1
-#                        start_period: 1m
-#                        interval: 2m
-#                        timeout: 10s
-#                        retries: 3
-#                networks:
-#                       #- traefik_proxy
-#                        - default
-#                volumes:
-#                        - ./fpm-nextcloud:/var/www/html
-#                        - ./fpm-nextcloud/config:/var/www/html/config
-#                        #- ./nextcloud/config/custom.config.php:/var/www/html/config/custom.config.php:ro
-#                        - ./fpm-nextcloud/custom_apps:/var/www/html/custom_apps
-#                        #- ./fpm-nextcloud/logs:/var/log/nextcloud
-#                        #- ./fpm-nextcloud/logs:/var/log/apache2
-#                        - ./fpm-nextcloud/themes:/var/www/html/themes
-#                        #- ${SHARED_PATH}/nextcloud:/opt/data
-#                        - ./postgres/sock:/var/run/postgresql
-#                        - ./shared:/shared
-#                        - /dev/urandom:/dev/urandom:ro
-#                        - /etc/localtime:/etc/localtime:ro
-#                environment:
-#                        - TZ=${TZ}
-#                        - PUID=${PUID}
-#                        - PGID=${PGID}
-#                        - DOMAIN=fpm-nextcloud.rpiapps.xyz
-#                        - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER}
-#                        - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
-#                        - POSTGRES_DB=fpmnextcloud
-#                        - POSTGRES_USER=fpmnextcloud
-#                        - POSTGRES_PASSWORD=fpmnextcloudDB
-#                        - POSTGRES_HOST=/var/run/postgresql
-#                        - REDIS_HOST=redis
-#                        - REDIS_HOST_PORT=6379
-#                        - REDIS_HOST_PASSWORD=J/X!:Ru_xcR}mJF\BW}Plp[(CboFY/9
-#                        #- REDIS_HOST_DBINDEX=0
-#                        #- SMTP_HOST=
-#                        #- SMTP_SECURE =
-#                        #- SMTP_PORT =
-#                        #- SMTP_AUTHTYPE =
-#                        #- SMTP_NAME =
-#                        #- SMTP_PASSWORD =
-#                        #- MAIL_FROM_ADDRESS =
-#                        #- MAIL_DOMAIN =
-#                depends_on:
-#                        - influxdb
-#                        - postgres
-#                        - redis
-#                        - nginx
-#
-#        nginx:
-#                container_name: nginx
-#                hostname: nginx
-#                image: nginx:latest
-#                restart: unless-stopped
-#                security_opt:
-#                        - no-new-privileges:true
-#                networks:
-#                        - traefik_proxy
-#                        - default
-#                volumes:
-#                        - ./fpm-nextcloud:/var/www/html:ro
-#                        - ./fpm-nextcloud/nginx.conf:/etc/nginx/nginx.conf:ro
-#                labels:
-#                        - "traefik.enable=true"
-#                        - "traefik.docker.network=traefik_proxy"
-#                        - "traefik.http.routers.fpm-nextcloud-secure.entrypoints=https"
-#                        - "traefik.http.routers.fpm-nextcloud-secure.rule=Host(`fpm-nextcloud.${DOMAIN_NAME}`)"
-#                        - "traefik.http.routers.fpm-nextcloud-secure.tls=true"
-#                        - "traefik.http.routers.fpm-nextcloud-secure.tls.certresolver=dns-cloudflare"
-#                        - "traefik.http.routers.fpm-nextcloud-secure.middlewares=nextcloud-chain@file"
-#                        - "traefik.http.routers.fpm-nextcloud-secure.service=fpm-nextcloud"
-#                        - "traefik.http.services.fpm-nextcloud.loadbalancer.server.port=80"
 
         influxdb: # metrics and time-series db 
                 container_name: influxdb
@@ -844,7 +1057,7 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
@@ -853,6 +1066,11 @@ services:
                         - default
                 ports:
                         - "8086:8086/tcp"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./influxdb/db:/var/lib/influxdb
                         - ./influxdb/.influx_history:/.influx_history
@@ -865,10 +1083,13 @@ services:
                         - TZ=$TZ
                         - PUID=$PUID
                         - PGID=$PGID
+                        - INFLUXDB_HTTP_AUTH_ENABLED=true
                         - INFLUXDB_ADMIN_USER=$INFLUXDB_USER
                         - INFLUXDB_ADMIN_PASSWORD=$ADMIN_PASSWORD
+                labels:
+                        - "com.ouroboros.enable=false"
 
-        prometheus:
+        prometheus: # metrics db for clusters
                 container_name: prometheus
                 hostname: prometheus
                 image: prom/prometheus
@@ -883,6 +1104,11 @@ services:
                         retries: 3
                 ports:
                         - "9090:9090"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
                         - /etc/localtime:/etc/localtime:ro
@@ -890,6 +1116,8 @@ services:
                         - TZ=$TZ
                         - PUID=$PUID
                         - PGID=$PGID
+                labels:
+                        - "com.ouroboros.enable=true"
                 
 
         # TODO: add administration webui; options:
@@ -904,7 +1132,7 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 security_opt:
@@ -913,6 +1141,11 @@ services:
                         - "5432:5432"
                 networks:
                         - default
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./postgres/data:/var/lib/postgresql/data
                         - ./postgres/logs:/var/log/postgresql
@@ -926,6 +1159,8 @@ services:
                         - PGID=$PGID
                         - POSTGRES_USER=$POSTGRES_USER
                         - POSTGRES_PASSWORD=$ADMIN_PASSWORD
+                labels:
+                        - "com.ouroboros.enable=false"
 
         redis: # caching db https://redis.io
                 container_name: redis
@@ -935,7 +1170,7 @@ services:
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 command: redis-server /usr/local/etc/redis/redis.conf
@@ -943,12 +1178,19 @@ services:
                         - default
                 ports:
                         - "6379:6379"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./redis/data:/data
                         - ./redis/logs:/var/log/redis
                         - /etc/localtime:/etc/localtime:ro
                         - ./redis/config/redis.conf:/usr/local/etc/redis/redis.conf:ro
                         - ./redis/config/passwd.conf:/usr/local/etc/redis/passwd.conf:ro
+                labels:
+                        - "com.ouroboros.enable=false"
 
         # TODO: look into prometheus' node_manager
         # https://github.com/prometheus/node_exporter
@@ -956,11 +1198,12 @@ services:
                 container_name: telegraf
                 hostname: telegraf
                 image: telegraf:latest
+                #user: $PUID:$PGID
                 restart: always
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 networks:
@@ -969,6 +1212,11 @@ services:
                 #        - "8092"
                 #        - "8125"
                 #        - "8094"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./telegraf/logs:/var/log/telegraf
                         - ./telegraf/config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
@@ -981,26 +1229,32 @@ services:
                         - PGID=$PGID
                         - HOST_PROC=/host/proc
                         - REDIS_PASSWORD=$REDIS_PASSWORD
-
-
+                labels:
+                        - "com.ouroboros.enable=true"
 
         grafana:
-                image: grafana/grafana:latest
+                image: grafana/grafana:master
                 hostname: grafana
                 container_name: grafana
-                user: $PUID:$PGID
+                #user: 472:$PGID
                 restart: unless-stopped
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 networks:
                         - traefik_proxy
                         - default
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
-                        - ./grafana/plugins:/var/lib/grafana/plugins
+                        - ./grafana/data:/var/lib/grafana
+                        - ./grafana/provisioning:/etc/grafana/provisioning
                         - ./grafana/logs:/var/log/grafana
                         - ./postgres/sock:/var/run/postgresql
                         - /etc/localtime:/etc/localtime:ro
@@ -1024,11 +1278,10 @@ services:
                         #- GF_SMTP_FROM_ADDRESS=admin@grafana.localhost
                         #- GF_SMTP_EHLO_IDENTITY=dashboard.example.com
                 depends_on:
-                        - influxdb
                         - postgres
-                        - varken
                         - grafana-image-renderer
                 labels:
+                        - "com.ouroboros.enable=true"
                         - "traefik.enable=true"
                         - "traefik.docker.network=traefik_proxy"
                         - "traefik.http.routers.grafana-secure.entrypoints=https"
@@ -1043,13 +1296,21 @@ services:
                 container_name: grafana-image-renderer
                 hostname: gf-renderer
                 image: cacreek/grafana-image-renderer-armv7l:latest-armv7l
+                user: $PUID:$PGID
                 restart: unless-stopped
                 security_opt:
                         - no-new-privileges:true
                 ports:
-                        - "8081:8081"
+                        - "127.0.0.1:8081:8081"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 environment:
                         - ENABLE_METRICS=true
+                labels:
+                        - "com.ouroboros.enable=true"
         
         # TODO: add Prometheus' AlertManager
         # https://prometheus.io/docs/alerting/overview/
@@ -1058,51 +1319,118 @@ services:
                 container_name: ha-dockermon
                 hostname: ha-dockermon
                 image: philhawthorne/ha-dockermon:arm
+                user: $PUID:$PGID
                 restart: unless-stopped
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
                 ports:
                         - "127.0.0.1:8126:8126"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - ./ha-dockermon/config:/config
                         - ./ha-dockermon/config/configuration.yml:/config/configuration.yml:ro
                         - ./ha-dockermon/logs:/var/log/ha-dockermon
                         - /var/run/docker.sock:/var/run/docker.sock:ro
                         - /etc/localtime:/etc/localtime:ro
+                labels:
+                        - "com.ouroboros.enable=true"
+
+        smtp:
+                container_name: smtp
+                hostname: smtp
+                image: ixdotai/smtp
+                #user: $PUID:$PGID
+                restart: unless-stopped
+                healthcheck:
+                        test: date || exit 1
+                        start_period: 1m
+                        interval: 5m
+                        timeout: 10s
+                        retries: 3
+                networks:
+                        - traefik_proxy
+                        - default
+                ports:
+                        - "25:25"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
+                #environment:
+                labels:
+                        - "com.ouroboros.enable=true"
+                        - "traefik.enable=true"
+                        - "traefik.docker.network=traefik_proxy"
+                        - "traefik.http.routers.smtp-rtr.entrypoints=https"
+                        - "traefik.http.routers.smtp-rtr.rule=Host(`smtp.$DOMAIN_NAME`)"
+                        - "traefik.http.routers.smtp-rtr.tls=true"
+                        - "traefik.http.routers.smtp-rtr.tls.certresolver=dns-cloudflare"
+                        - "traefik.http.routers.smtp-rtr.middlewares=noauth-chain@file"
+                        - "traefik.http.routers.smtp-rtr.service=smtp"
+                        - "traefik.http.services.smtp.loadbalancer.server.port=25"
+
+
         docker-prune:
                 container_name: docker-prune
                 hostname: docker-prune
                 image: cacreek/docker-prune:latest-armv7l
+                #user: $PUID:$PGID
                 restart: unless-stopped
                 command: --filter "until=24h"
                 healthcheck:
                         test: date || exit 1
                         start_period: 1m
-                        interval: 2m
+                        interval: 5m
                         timeout: 10s
                         retries: 3
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
                         - /var/run/docker.sock:/var/run/docker.sock:ro
                 environment:
                         - OPTIONS=system
                         - SLEEP=86400
+                labels:
+                        - "com.ouroboros.enable=true"
 
         ouroboros:
                 container_name: ouroboros
                 hostname: ouroboros
                 image: pyouroboros/ouroboros
+                user: $PUID:$PGID
                 restart: unless-stopped
+                networks: 
+                        - default
+                ports:
+                        - "127.0.0.1:8000:8000"
+                logging:
+                        driver: json-file
+                        options:
+                                max-size: "10m"
+                                max-file: "5"
                 volumes:
-                        - /var/run/docker.sock:/var/run/docker.sock
+                        - /var/run/docker.sock:/var/run/docker.sock:ro
                 environment:
                         - TZ=$TZ
                         - CLEANUP=true
-                        - INTERVAL=300
+                        - CRON="0 9 * * *"
                         - LOG_LEVEL=info
-                        - SELF_UPDATE=true
-                        - IGNORE=prometheus influxdb postgres nextcloud plex
+                        # disable self update or ports will be lost upon update
+                        - SELF_UPDATE=false
+                        - LABLE_ENABLE=true
+                        - DATA_EXPORT=prometheus
+                        - PROMETHEUS_ADDR=0.0.0.0
+                        - PROMETHEUS_PORT=8000
 

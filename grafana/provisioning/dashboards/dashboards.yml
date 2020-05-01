@@ -1,0 +1,22 @@
+apiVersion: 1
+
+providers:
+- name: 'ouroboros'
+  orgId: 1
+  folder: ''
+  type: file
+  disableDeletion: false
+  editable: true
+  allowUiUpdates: true
+  options:
+    path: /var/lib/grafana/dashboards
+
+- name: 'varken'
+  orgId: 1
+  folder: ''
+  type: file
+  disableDeletion: false
+  editable: true
+  allowUiUpdates: true
+  options:
+    path: /var/lib/grafana/dashboards

@@ -13,33 +13,28 @@ docker_monitor:
   #  url: unix://var/run/docker.sock
   events: true
   containers:
-    - heimdall
     - jackett
-    - lidarr
-    - mariadb
     - nextcloud
     - ombi
-    - organizr
-    - phpmyadmin
     - pihole
-    - portainer
     - plex
     - radarr
     - sonarr
+    - lidarr
     - tautulli
     - traefik
-    - transmission-vpn
+    - transmission
     - homeassistant
-  monitored_conditions:
-    - container_uptime
-    - container_status
-    - container_cpu_percentage_usage
-    - container_memory_usage
-    - container_memory_percentage_usage
-    - container_network_speed_up
-    - container_network_speed_down
-    - container_network_total_up
-    - container_network_total_down
+#  monitored_conditions:
+#    - container_uptime
+#    - container_status
+#    - container_cpu_percentage_usage
+#    - container_memory_usage
+#    - container_memory_percentage_usage
+#    - container_network_speed_up
+#    - container_network_speed_down
+#    - container_network_total_up
+#    - container_network_total_down
 
 # Text to speech
 tts:
